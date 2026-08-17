@@ -1,0 +1,33 @@
+@using WebSSMS.Models
+
+<div style="height: 100%; overflow: auto; padding: 8px; font-family: var(--font-mono); font-size: var(--font-size-sm);">
+    @foreach (var msg in Messages)
+    {
+        <div style="padding: 2px 0; color: @GetMessageColor(msg.Severity); white-space: pre-wrap;">
+            @if (msg.LineNumber.HasValue)
+            {
+                <span style="color: var(--text-muted);">Line @msg.LineNumber: </span>
+            }
+            @msg.Text
+        </div>
+    }
+
+    @if (ExecutionTime != TimeSpan.Zero)
+    {
+        <div style="padding: 8px 0 2px 0; color: var(--text-secondary); border-top: 1px solid var(--border-primary); margin-top: 8px;">
+            Completion time: @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<QueryMessage> Messages { get; set; } = new();
+    [Parameter] public TimeSpan ExecutionTime { get; set; }
+
+    private string GetMessageColor(MessageSeverity severity) => severity switch
+    {
+        MessageSeverity.Error => "var(--text-error)",
+        MessageSeverity.Warning => "var(--text-warning)",
+        _ => "var(--text-primary)"
+    };
+}

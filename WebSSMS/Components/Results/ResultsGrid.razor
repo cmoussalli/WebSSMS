@@ -1,0 +1,50 @@
+@using WebSSMS.Models
+
+@if (Result?.ResultSets.Count > 1)
+{
+    <div class="tab-control" style="height: 100%;">
+        <div class="tab-header tab-header-sm">
+            @for (int i = 0; i < Result.ResultSets.Count; i++)
+            {
+                var index = i;
+                <div class="tab-item @(ActiveResultSetIndex == index ? "active" : "")"
+                     @onclick="() => ActiveResultSetIndex = index">
+                    <span class="tab-item-title">Result Set @(index + 1)</span>
+                </div>
+            }
+        </div>
+        <div class="tab-content">
+            @if (ActiveResultSet != null)
+            {
+                <DataGrid Columns="ActiveResultSet.Columns"
+                          Rows="ActiveResultSet.Rows"
+                          ShowRowNumbers="true"
+                          ShowFooter="true"
+                          Sortable="true" />
+            }
+        </div>
+    </div>
+}
+else if (Result?.ResultSets.Count == 1)
+{
+    <DataGrid Columns="Result.ResultSets[0].Columns"
+              Rows="Result.ResultSets[0].Rows"
+              ShowRowNumbers="true"
+              ShowFooter="true"
+              Sortable="true" />
+}
+else
+{
+    <div style="padding: 16px; color: var(--text-secondary); font-size: var(--font-size-sm);">
+        Query executed successfully. No result set returned.
+    </div>
+}
+
+@code {
+    [Parameter] public QueryResult? Result { get; set; }
+
+    private int ActiveResultSetIndex = 0;
+    private ResultSet? ActiveResultSet => Result?.ResultSets.Count > ActiveResultSetIndex
+        ? Result.ResultSets[ActiveResultSetIndex]
+        : null;
+}

@@ -1,0 +1,289 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject ConnectionManager ConnectionManager
+@inject QueryExecutionService QueryService
+@inject SchemaDiscoveryService SchemaService
+
+<div class="tab-control" style="height: 100%;">
+    <!-- Query Tab Headers -->
+    <div class="tab-header">
+        @foreach (var tab in Tabs)
+        {
+            <div class="tab-item @(tab.Id == ActiveTabId ? "active" : "")"
+                 @onclick="() => SetActiveTab(tab.Id)">
+                <span class="tab-item-title">@tab.Title</span>
+                @if (tab.IsDirty)
+                {
+                    <span class="tab-item-dirty"></span>
+                }
+                <button class="tab-item-close" @onclick="() => CloseTab(tab)" @onclick:stopPropagation>
+                    &times;
+                </button>
+            </div>
+        }
+        <button class="toolbar-btn" title="New Query" @onclick="() => AddNewTab()" style="margin: 4px;">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" fill="none"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Active Tab Content -->
+    @if (ActiveTab != null)
+    {
+        <div style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+            <!-- Query Toolbar -->
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <button class="toolbar-btn toolbar-btn-text" @onclick="ExecuteQuery"
+                            disabled="@(ActiveTab.IsExecuting || !ConnectionManager.IsConnected)"
+                            title="Execute (F5)">
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="#4ec9b0">
+                            <path d="M4 2l10 6-10 6z"/>
+                        </svg>
+                        <span>Execute</span>
+                    </button>
+
+                    <button class="toolbar-btn" @onclick="CancelQuery"
+                            disabled="@(!ActiveTab.IsExecuting)"
+                            title="Cancel Executing Query">
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="#d16969">
+                            <rect x="3" y="3" width="10" height="10" rx="1"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="toolbar-separator"></div>
+
+                <!-- Database Selector -->
+                <div class="toolbar-group">
+                    <DropdownButton Items="Databases"
+                                    Value="@(ActiveTab.SelectedDatabase ?? ConnectionManager.GetCurrentDatabase() ?? "master")"
+                                    OnSelectionChanged="ChangeDatabase" />
+                </div>
+
+                <div class="toolbar-separator"></div>
+
+                <div class="toolbar-group">
+                    <button class="toolbar-btn" title="Include Actual Execution Plan"
+                            @onclick="ToggleExecutionPlan">
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="@(IncludeExecutionPlan ? "var(--text-accent)" : "currentColor")">
+                            <rect x="1" y="6" width="4" height="4" rx="1"/>
+                            <rect x="6" y="2" width="4" height="4" rx="1"/>
+                            <rect x="6" y="10" width="4" height="4" rx="1"/>
+                            <rect x="11" y="6" width="4" height="4" rx="1"/>
+                            <line x1="5" y1="8" x2="6" y2="4" stroke="currentColor" stroke-width="1"/>
+                            <line x1="5" y1="8" x2="6" y2="12" stroke="currentColor" stroke-width="1"/>
+                            <line x1="10" y1="4" x2="11" y2="8" stroke="currentColor" stroke-width="1"/>
+                            <line x1="10" y1="12" x2="11" y2="8" stroke="currentColor" stroke-width="1"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Editor and Results Split -->
+            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <div id="editor-panel-@ActiveTab.Id" style="height: 50%; overflow: hidden;">
+                    <QueryEditor @key="ActiveTab.Id" @ref="CurrentEditor"
+                                 Content="@ActiveTab.Content"
+                                 ContentChanged="HandleContentChanged"
+                                 OnExecuteRequested="ExecuteQuery"
+                                 OnExecuteSelectionRequested="ExecuteSelection"
+                                 OnParseRequested="ParseQuery" />
+                </div>
+                <div class="splitter splitter-horizontal"
+                     id="query-splitter-@ActiveTab.Id"></div>
+                <div id="results-panel-@ActiveTab.Id" style="flex: 1; overflow: hidden;">
+                    <ResultsPanel Result="ActiveTab.LastResult"
+                                  IsExecuting="ActiveTab.IsExecuting" />
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-secondary);">
+            <div style="text-align: center;">
+                <p style="font-size: var(--font-size-lg);">No query tabs open</p>
+                <p style="font-size: var(--font-size-sm); margin-top: 8px;">
+                    Click <strong>New Query</strong> or press <strong>Ctrl+N</strong> to create a new tab
+                </p>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<QueryTab> Tabs = new();
+    private string? ActiveTabId;
+    private QueryTab? ActiveTab => Tabs.FirstOrDefault(t => t.Id == ActiveTabId);
+    private QueryEditor? CurrentEditor;
+    private List<string> Databases = new();
+    private bool IncludeExecutionPlan;
+    private int _tabCounter = 1;
+
+    protected override void OnInitialized()
+    {
+        ConnectionManager.OnConnectionChanged += async () => await InvokeAsync(async () =>
+        {
+            await LoadDatabases();
+            StateHasChanged();
+        });
+    }
+
+    public void AddNewTab(string? content = null, string? title = null)
+    {
+        var tab = new QueryTab
+        {
+            Title = title ?? $"SQLQuery{_tabCounter++}.sql",
+            Content = content ?? "",
+            SelectedDatabase = ConnectionManager.GetCurrentDatabase()
+        };
+        Tabs.Add(tab);
+        ActiveTabId = tab.Id;
+        StateHasChanged();
+    }
+
+    public void OpenTabWithScript(string script)
+    {
+        AddNewTab(script);
+    }
+
+    private void SetActiveTab(string tabId)
+    {
+        ActiveTabId = tabId;
+    }
+
+    private void CloseTab(QueryTab tab)
+    {
+        var index = Tabs.IndexOf(tab);
+        Tabs.Remove(tab);
+        tab.CancellationSource?.Cancel();
+
+        if (ActiveTabId == tab.Id)
+        {
+            ActiveTabId = Tabs.Count > 0
+                ? Tabs[Math.Min(index, Tabs.Count - 1)].Id
+                : null;
+        }
+    }
+
+    private async Task ExecuteQuery()
+    {
+        if (ActiveTab == null || !ConnectionManager.IsConnected) return;
+
+        var content = CurrentEditor != null
+            ? await CurrentEditor.GetContentAsync()
+            : ActiveTab.Content;
+
+        await ExecuteSql(content);
+    }
+
+    private async Task ExecuteSelection(string selectedText)
+    {
+        if (ActiveTab == null || !ConnectionManager.IsConnected) return;
+        if (string.IsNullOrWhiteSpace(selectedText)) return;
+        await ExecuteSql(selectedText);
+    }
+
+    private async Task ExecuteSql(string sql)
+    {
+        if (ActiveTab == null) return;
+
+        ActiveTab.IsExecuting = true;
+        ActiveTab.CancellationSource = new CancellationTokenSource();
+        StateHasChanged();
+
+        try
+        {
+            if (ActiveTab.SelectedDatabase != null)
+            {
+                await ConnectionManager.ChangeDatabaseAsync(ActiveTab.SelectedDatabase);
+            }
+
+            ActiveTab.LastResult = await QueryService.ExecuteAsync(
+                sql, IncludeExecutionPlan, ActiveTab.CancellationSource.Token);
+        }
+        finally
+        {
+            ActiveTab.IsExecuting = false;
+            ActiveTab.CancellationSource = null;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelQuery()
+    {
+        ActiveTab?.CancellationSource?.Cancel();
+    }
+
+    private async Task ParseQuery()
+    {
+        if (ActiveTab == null || !ConnectionManager.IsConnected) return;
+
+        var content = CurrentEditor != null
+            ? await CurrentEditor.GetContentAsync()
+            : ActiveTab.Content;
+
+        var parseSql = $"SET NOEXEC ON;\n{content}\nSET NOEXEC OFF;";
+
+        ActiveTab.IsExecuting = true;
+        StateHasChanged();
+
+        try
+        {
+            ActiveTab.LastResult = await QueryService.ExecuteAsync(parseSql);
+            if (!ActiveTab.LastResult.HasErrors)
+            {
+                ActiveTab.LastResult.Messages.Insert(0, new QueryMessage
+                {
+                    Text = "Commands completed successfully.",
+                    Severity = MessageSeverity.Info
+                });
+            }
+        }
+        finally
+        {
+            ActiveTab.IsExecuting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ChangeDatabase(string database)
+    {
+        if (ActiveTab != null)
+        {
+            ActiveTab.SelectedDatabase = database;
+            await ConnectionManager.ChangeDatabaseAsync(database);
+        }
+    }
+
+    private async Task LoadDatabases()
+    {
+        if (ConnectionManager.IsConnected)
+        {
+            try
+            {
+                Databases = await SchemaService.GetDatabasesAsync();
+            }
+            catch
+            {
+                Databases = new List<string> { "master" };
+            }
+        }
+    }
+
+    private void ToggleExecutionPlan()
+    {
+        IncludeExecutionPlan = !IncludeExecutionPlan;
+    }
+
+    private void HandleContentChanged(string content)
+    {
+        if (ActiveTab != null)
+        {
+            ActiveTab.Content = content;
+            ActiveTab.IsDirty = true;
+        }
+    }
+}

@@ -1,0 +1,32 @@
+<div class="toolbar-dropdown" style="@Style">
+    <select class="toolbar-dropdown-select" value="@Value" @onchange="HandleChange">
+        @foreach (var item in Items)
+        {
+            <option value="@item">@item</option>
+        }
+    </select>
+    <span class="toolbar-dropdown-icon">
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+            <path d="M0 2l4 4 4-4z"/>
+        </svg>
+    </span>
+</div>
+
+@code {
+    [Parameter] public List<string> Items { get; set; } = new();
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback<string> OnSelectionChanged { get; set; }
+    [Parameter] public string? Style { get; set; }
+
+    private async Task HandleChange(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (value != null)
+        {
+            Value = value;
+            await ValueChanged.InvokeAsync(value);
+            await OnSelectionChanged.InvokeAsync(value);
+        }
+    }
+}

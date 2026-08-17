@@ -1,0 +1,297 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject QueryExecutionService QueryService
+@inject ScriptGeneratorService ScriptGenerator
+@inject SchemaDiscoveryService SchemaService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <button class="toolbar-btn toolbar-btn-text" @onclick="SaveTable" title="Save (Ctrl+S)">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M13 1H3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V3.5L13 1zM8 13a2 2 0 110-4 2 2 0 010 4zM11 6H3V3h8v3z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+            <span>Save</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="GenerateScript" title="Generate Change Script">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <rect x="2" y="1" width="12" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M5 4h6M5 7h6M5 10h4" stroke="currentColor" stroke-width="1"/>
+            </svg>
+            <span>Script</span>
+        </button>
+        <div class="toolbar-separator"></div>
+        <span style="font-size: var(--font-size-sm); color: var(--text-secondary);">
+            @(Table.IsExisting ? $"Design Table: {Table.FullName}" : "New Table")
+        </span>
+    </div>
+
+    <!-- Split: Column Grid + Properties -->
+    <div style="flex: 1; display: flex; overflow: hidden;">
+        <!-- Column Grid -->
+        <div style="flex: 1; overflow: auto;">
+            @if (_isLoading)
+            {
+                <div style="padding: 24px; text-align: center; color: var(--text-secondary);">
+                    Loading table definition...
+                </div>
+            }
+            else
+            {
+            <table class="data-grid" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th style="width: 30px;"></th>
+                        <th>Column Name</th>
+                        <th>Data Type</th>
+                        <th style="width: 50px;">Length</th>
+                        <th style="width: 70px;">Allow Nulls</th>
+                        <th style="width: 60px;">PK</th>
+                        <th style="width: 70px;">Identity</th>
+                        <th>Default</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < Table.Columns.Count; i++)
+                    {
+                        var col = Table.Columns[i];
+                        var index = i;
+                        <tr class="@(SelectedColumnIndex == index ? "selected" : "")"
+                            @onclick="() => SelectColumn(index)">
+                            <td class="row-number">@(index + 1)</td>
+                            <td>
+                                <input class="form-input" style="border: none; background: transparent; width: 100%;"
+                                       @bind="col.Name" @bind:event="oninput" />
+                            </td>
+                            <td>
+                                <select class="form-select" style="border: none; background: transparent;"
+                                        @bind="col.DataType">
+                                    @foreach (var dt in DataTypes)
+                                    {
+                                        <option value="@dt">@dt</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <input class="form-input" type="number" style="border: none; background: transparent; width: 100%;"
+                                       @bind="col.MaxLength" />
+                            </td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" @bind="col.IsNullable" />
+                            </td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" @bind="col.IsPrimaryKey" />
+                            </td>
+                            <td style="text-align: center;">
+                                <input type="checkbox" @bind="col.IsIdentity" />
+                            </td>
+                            <td>
+                                <input class="form-input" style="border: none; background: transparent; width: 100%;"
+                                       @bind="col.DefaultValue" />
+                            </td>
+                        </tr>
+                    }
+                    <!-- Empty row for new column -->
+                    <tr>
+                        <td class="row-number">*</td>
+                        <td colspan="7">
+                            <input class="form-input" style="border: none; background: transparent; width: 100%;"
+                                   placeholder="Click to add new column..."
+                                   @onfocus="AddNewColumn" />
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            }
+        </div>
+
+        <!-- Column Properties Panel -->
+        <div style="width: 280px; border-left: 1px solid var(--border-primary); overflow: auto;">
+            <div class="sidebar-header">
+                <span>Column Properties</span>
+            </div>
+            @if (SelectedColumn != null)
+            {
+                <div style="padding: 8px;">
+                    <div class="property-grid">
+                        <div class="property-grid-category">General</div>
+                        <div class="property-grid-label">Name</div>
+                        <div class="property-grid-value"><input @bind="SelectedColumn.Name" /></div>
+                        <div class="property-grid-label">Data Type</div>
+                        <div class="property-grid-value">
+                            <select @bind="SelectedColumn.DataType">
+                                @foreach (var dt in DataTypes)
+                                {
+                                    <option value="@dt">@dt</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="property-grid-label">Length</div>
+                        <div class="property-grid-value"><input type="number" @bind="SelectedColumn.MaxLength" /></div>
+                        <div class="property-grid-label">Precision</div>
+                        <div class="property-grid-value"><input type="number" @bind="SelectedColumn.Precision" /></div>
+                        <div class="property-grid-label">Scale</div>
+                        <div class="property-grid-value"><input type="number" @bind="SelectedColumn.Scale" /></div>
+                        <div class="property-grid-label">Allow Nulls</div>
+                        <div class="property-grid-value"><input type="checkbox" @bind="SelectedColumn.IsNullable" /></div>
+                        <div class="property-grid-label">Default Value</div>
+                        <div class="property-grid-value"><input @bind="SelectedColumn.DefaultValue" /></div>
+
+                        <div class="property-grid-category">Identity</div>
+                        <div class="property-grid-label">Is Identity</div>
+                        <div class="property-grid-value"><input type="checkbox" @bind="SelectedColumn.IsIdentity" /></div>
+                        <div class="property-grid-label">Seed</div>
+                        <div class="property-grid-value"><input type="number" @bind="SelectedColumn.IdentitySeed" /></div>
+                        <div class="property-grid-label">Increment</div>
+                        <div class="property-grid-value"><input type="number" @bind="SelectedColumn.IdentityIncrement" /></div>
+
+                        <div class="property-grid-category">Computed</div>
+                        <div class="property-grid-label">Formula</div>
+                        <div class="property-grid-value"><input @bind="SelectedColumn.ComputedExpression" /></div>
+                        <div class="property-grid-label">Is Persisted</div>
+                        <div class="property-grid-value"><input type="checkbox" @bind="SelectedColumn.IsPersisted" /></div>
+
+                        <div class="property-grid-category">Description</div>
+                        <div class="property-grid-label">Description</div>
+                        <div class="property-grid-value"><input @bind="SelectedColumn.Description" /></div>
+                    </div>
+
+                    <div style="margin-top: 12px;">
+                        <button class="btn btn-danger btn-sm" @onclick="DeleteSelectedColumn">
+                            Delete Column
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Table Properties Footer -->
+    <div style="border-top: 1px solid var(--border-primary); padding: 8px 12px; display: flex; gap: 16px; font-size: var(--font-size-sm);">
+        <div class="form-group form-group-horizontal" style="margin: 0;">
+            <label class="form-label" style="min-width: auto;">Schema:</label>
+            <input class="form-input" style="width: 100px;" @bind="Table.SchemaName" />
+        </div>
+        <div class="form-group form-group-horizontal" style="margin: 0;">
+            <label class="form-label" style="min-width: auto;">Table Name:</label>
+            <input class="form-input" style="width: 200px;" @bind="Table.TableName" />
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public TableDefinition Table { get; set; } = new();
+    [Parameter] public EventCallback<string> OnScriptGenerated { get; set; }
+
+    private bool _isLoading;
+    private string? _loadedTable;
+    private int SelectedColumnIndex = -1;
+    private ColumnDefinition? SelectedColumn => SelectedColumnIndex >= 0 && SelectedColumnIndex < Table.Columns.Count
+        ? Table.Columns[SelectedColumnIndex] : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var tableKey = $"{Table.DatabaseName}.{Table.SchemaName}.{Table.TableName}";
+        if (Table.IsExisting && Table.Columns.Count == 0 && _loadedTable != tableKey)
+        {
+            _isLoading = true;
+            try
+            {
+                var loaded = await SchemaService.GetTableDefinitionAsync(
+                    Table.DatabaseName!, Table.SchemaName, Table.TableName);
+                Table.Columns = loaded.Columns;
+                _loadedTable = tableKey;
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
+    }
+
+    private static readonly string[] DataTypes = new[]
+    {
+        "int", "bigint", "smallint", "tinyint", "bit",
+        "decimal", "numeric", "money", "smallmoney", "float", "real",
+        "nvarchar", "varchar", "nchar", "char", "ntext", "text",
+        "datetime", "datetime2", "date", "time", "datetimeoffset", "smalldatetime",
+        "binary", "varbinary", "image",
+        "uniqueidentifier", "xml", "sql_variant",
+        "geography", "geometry", "hierarchyid"
+    };
+
+    private void SelectColumn(int index)
+    {
+        SelectedColumnIndex = index;
+    }
+
+    private void AddNewColumn()
+    {
+        Table.Columns.Add(new ColumnDefinition
+        {
+            Name = $"Column{Table.Columns.Count + 1}",
+            DataType = "nvarchar",
+            MaxLength = 50,
+            IsNullable = true,
+            OrdinalPosition = Table.Columns.Count
+        });
+        SelectedColumnIndex = Table.Columns.Count - 1;
+    }
+
+    private void DeleteSelectedColumn()
+    {
+        if (SelectedColumn != null)
+        {
+            Table.Columns.Remove(SelectedColumn);
+            SelectedColumnIndex = Math.Min(SelectedColumnIndex, Table.Columns.Count - 1);
+        }
+    }
+
+    private async Task SaveTable()
+    {
+        var script = GenerateCreateScript();
+        var result = await QueryService.ExecuteNonQueryAsync(script);
+        // In a real app, handle result/errors
+    }
+
+    private async Task GenerateScript()
+    {
+        var script = GenerateCreateScript();
+        await OnScriptGenerated.InvokeAsync(script);
+    }
+
+    private string GenerateCreateScript()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"CREATE TABLE [{Table.SchemaName}].[{Table.TableName}]");
+        sb.AppendLine("(");
+
+        var columnDefs = new List<string>();
+        var pkColumns = new List<string>();
+
+        foreach (var col in Table.Columns.Where(c => !string.IsNullOrEmpty(c.Name)))
+        {
+            var def = $"    [{col.Name}] {col.DataTypeDisplay}";
+            if (col.IsIdentity)
+                def += $" IDENTITY({col.IdentitySeed},{col.IdentityIncrement})";
+            def += col.IsNullable ? " NULL" : " NOT NULL";
+            if (!string.IsNullOrEmpty(col.DefaultValue))
+                def += $" DEFAULT {col.DefaultValue}";
+            columnDefs.Add(def);
+
+            if (col.IsPrimaryKey)
+                pkColumns.Add($"[{col.Name}]");
+        }
+
+        if (pkColumns.Count > 0)
+        {
+            columnDefs.Add($"    CONSTRAINT [PK_{Table.TableName}] PRIMARY KEY CLUSTERED ({string.Join(", ", pkColumns)})");
+        }
+
+        sb.AppendLine(string.Join(",\n", columnDefs));
+        sb.AppendLine(")");
+        sb.AppendLine("GO");
+
+        return sb.ToString();
+    }
+}

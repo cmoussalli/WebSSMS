@@ -1,0 +1,59 @@
+@implements IDisposable
+
+<div class="toast-container">
+    @foreach (var toast in _toasts)
+    {
+        <div class="toast toast-@toast.Type.ToString().ToLower()">
+            <span class="toast-message">@toast.Message</span>
+            <button class="toast-close" @onclick="() => RemoveToast(toast)">&times;</button>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<ToastItem> _toasts = new();
+    private readonly List<Timer> _timers = new();
+
+    public void Show(string message, ToastType type = ToastType.Info, int durationMs = 4000)
+    {
+        var toast = new ToastItem { Message = message, Type = type };
+        _toasts.Add(toast);
+
+        var timer = new Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                _toasts.Remove(toast);
+                StateHasChanged();
+            });
+        }, null, durationMs, Timeout.Infinite);
+
+        _timers.Add(timer);
+        StateHasChanged();
+    }
+
+    private void RemoveToast(ToastItem toast)
+    {
+        _toasts.Remove(toast);
+    }
+
+    public void Dispose()
+    {
+        foreach (var timer in _timers)
+            timer.Dispose();
+    }
+
+    private class ToastItem
+    {
+        public string Message { get; set; } = string.Empty;
+        public ToastType Type { get; set; }
+    }
+
+    public enum ToastType
+    {
+        Info,
+        Success,
+        Error,
+        Warning
+    }
+}

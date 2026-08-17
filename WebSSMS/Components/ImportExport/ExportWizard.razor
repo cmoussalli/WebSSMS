@@ -1,0 +1,108 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject ImportExportService ImportExportService
+
+<Modal IsVisible="IsVisible" Title="Export Data" OnClose="Close" Size="Modal.ModalSize.Large">
+    <ChildContent>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Database:</label>
+            <select class="form-select" @bind="Database">
+                @foreach (var db in Databases)
+                {
+                    <option value="@db">@db</option>
+                }
+            </select>
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Schema:</label>
+            <input class="form-input" @bind="Schema" style="width: 100px;" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Table:</label>
+            <input class="form-input" @bind="TableName" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Format:</label>
+            <select class="form-select" @bind="ExportFormat" style="width: 180px;">
+                <option value="csv">CSV</option>
+                <option value="insert">INSERT Statements</option>
+            </select>
+        </div>
+
+        @if (ExportFormat == "csv")
+        {
+            <div class="form-group form-group-horizontal">
+                <label class="form-label">Delimiter:</label>
+                <select class="form-select" style="width: 120px;" @bind="Delimiter">
+                    <option value=",">Comma</option>
+                    <option value="&#9;">Tab</option>
+                    <option value=";">Semicolon</option>
+                </select>
+            </div>
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="IncludeHeaders" />
+                Include column headers
+            </label>
+        }
+
+        @if (!string.IsNullOrEmpty(ExportedData))
+        {
+            <div style="margin-top: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-weight: 600; font-size: var(--font-size-sm);">Exported Data:</span>
+                    <span style="font-size: var(--font-size-xs); color: var(--text-secondary);">
+                        @ExportedData.Length.ToString("N0") characters
+                    </span>
+                </div>
+                <textarea class="form-textarea" readonly style="height: 300px; font-family: var(--font-mono); font-size: var(--font-size-xs);"
+                          value="@ExportedData"></textarea>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-primary" @onclick="RunExport" disabled="@IsExporting">
+            @(IsExporting ? "Exporting..." : "Export")
+        </button>
+        <button class="btn" @onclick="Close">Close</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    private string Database = "master";
+    private string Schema = "dbo";
+    private string TableName = string.Empty;
+    private string ExportFormat = "csv";
+    private string Delimiter = ",";
+    private bool IncludeHeaders = true;
+    private string? ExportedData;
+    private bool IsExporting;
+
+    private async Task RunExport()
+    {
+        IsExporting = true;
+        StateHasChanged();
+
+        try
+        {
+            ExportedData = ExportFormat == "csv"
+                ? await ImportExportService.ExportToCsvAsync(Database, Schema, TableName, IncludeHeaders, Delimiter)
+                : await ImportExportService.ExportToInsertStatementsAsync(Database, Schema, TableName);
+        }
+        catch (Exception ex)
+        {
+            ExportedData = $"Error: {ex.Message}";
+        }
+
+        IsExporting = false;
+    }
+
+    private async Task Close()
+    {
+        ExportedData = null;
+        await OnClose.InvokeAsync();
+    }
+}

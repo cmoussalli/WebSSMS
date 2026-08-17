@@ -1,0 +1,143 @@
+@using WebSSMS.Models
+
+<div class="tree-node">
+    <div class="tree-node-row @(IsSelected ? "selected" : "")"
+         style="padding-left: @(Level * 20 + 4)px"
+         @onclick="HandleClick"
+         @ondblclick="HandleDoubleClick"
+         @oncontextmenu="HandleContextMenu"
+         @oncontextmenu:preventDefault>
+
+        <span class="tree-node-expander @(HasChildren ? (Node.IsExpanded ? "expanded" : "") : "leaf")"
+              @onclick="HandleExpandClick"
+              @onclick:stopPropagation>
+            @if (HasChildren)
+            {
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                    <path d="M6 4l4 4-4 4z"/>
+                </svg>
+            }
+        </span>
+
+        <span class="tree-node-icon icon-@Node.Icon">
+            @((MarkupString)GetIconSvg(Node.Icon))
+        </span>
+
+        <span class="tree-node-label">@Node.DisplayName</span>
+    </div>
+
+    @if (Node.IsExpanded)
+    {
+        <div class="tree-node-children">
+            @if (Node.IsLoading)
+            {
+                <div class="tree-node-loading" style="padding-left: @((Level + 1) * 20 + 24)px">
+                    <div class="spinner"></div>
+                    <span>Loading...</span>
+                </div>
+            }
+            else
+            {
+                @foreach (var child in Node.Children)
+                {
+                    <TreeViewNode Node="child"
+                                  Level="Level + 1"
+                                  SelectedNode="SelectedNode"
+                                  OnNodeSelected="OnNodeSelected"
+                                  OnNodeExpanded="OnNodeExpanded"
+                                  OnNodeDoubleClicked="OnNodeDoubleClicked"
+                                  OnNodeContextMenu="OnNodeContextMenu" />
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public DatabaseObjectNode Node { get; set; } = new();
+    [Parameter] public int Level { get; set; }
+    [Parameter] public DatabaseObjectNode? SelectedNode { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeSelected { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeExpanded { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeDoubleClicked { get; set; }
+    [Parameter] public EventCallback<(DatabaseObjectNode Node, double X, double Y)> OnNodeContextMenu { get; set; }
+
+    private bool IsSelected => SelectedNode?.Id == Node.Id;
+
+    private bool HasChildren => Node.ObjectType switch
+    {
+        DatabaseObjectType.Column => false,
+        DatabaseObjectType.PrimaryKey => false,
+        DatabaseObjectType.ForeignKey => false,
+        DatabaseObjectType.Index => false,
+        DatabaseObjectType.CheckConstraint => false,
+        DatabaseObjectType.UniqueConstraint => false,
+        DatabaseObjectType.DefaultConstraint => false,
+        DatabaseObjectType.Trigger => false,
+        DatabaseObjectType.Login => false,
+        DatabaseObjectType.User => false,
+        DatabaseObjectType.Synonym => false,
+        DatabaseObjectType.UserDefinedType => false,
+        DatabaseObjectType.AgentJob => false,
+        _ => true
+    };
+
+    private async Task HandleClick()
+    {
+        await OnNodeSelected.InvokeAsync(Node);
+    }
+
+    private async Task HandleDoubleClick()
+    {
+        if (HasChildren)
+        {
+            Node.IsExpanded = !Node.IsExpanded;
+            if (Node.IsExpanded && !Node.ChildrenLoaded)
+            {
+                await OnNodeExpanded.InvokeAsync(Node);
+            }
+        }
+        else
+        {
+            await OnNodeDoubleClicked.InvokeAsync(Node);
+        }
+    }
+
+    private async Task HandleExpandClick()
+    {
+        if (!HasChildren) return;
+        Node.IsExpanded = !Node.IsExpanded;
+        if (Node.IsExpanded && !Node.ChildrenLoaded)
+        {
+            await OnNodeExpanded.InvokeAsync(Node);
+        }
+    }
+
+    private async Task HandleContextMenu(MouseEventArgs e)
+    {
+        await OnNodeSelected.InvokeAsync(Node);
+        await OnNodeContextMenu.InvokeAsync((Node, e.ClientX, e.ClientY));
+    }
+
+    private string GetIconSvg(string iconType) => iconType switch
+    {
+        "server" => "<svg viewBox='0 0 16 16' fill='currentColor'><rect x='2' y='1' width='12' height='4' rx='1'/><rect x='2' y='6' width='12' height='4' rx='1'/><rect x='2' y='11' width='12' height='4' rx='1'/><circle cx='12' cy='3' r='1' fill='#4ec9b0'/><circle cx='12' cy='8' r='1' fill='#4ec9b0'/><circle cx='12' cy='13' r='1' fill='#4ec9b0'/></svg>",
+        "database" => "<svg viewBox='0 0 16 16' fill='currentColor'><ellipse cx='8' cy='3' rx='6' ry='2'/><path d='M2 3v3c0 1.1 2.7 2 6 2s6-.9 6-2V3' fill='none' stroke='currentColor' stroke-width='1.2'/><path d='M2 6v3c0 1.1 2.7 2 6 2s6-.9 6-2V6' fill='none' stroke='currentColor' stroke-width='1.2'/><path d='M2 9v3c0 1.1 2.7 2 6 2s6-.9 6-2V9' fill='none' stroke='currentColor' stroke-width='1.2'/></svg>",
+        "table" => "<svg viewBox='0 0 16 16' fill='currentColor'><rect x='1' y='2' width='14' height='12' rx='1' fill='none' stroke='currentColor' stroke-width='1.2'/><line x1='1' y1='5' x2='15' y2='5' stroke='currentColor' stroke-width='1.2'/><line x1='1' y1='8' x2='15' y2='8' stroke='currentColor' stroke-width='1'/><line x1='1' y1='11' x2='15' y2='11' stroke='currentColor' stroke-width='1'/><line x1='6' y1='5' x2='6' y2='14' stroke='currentColor' stroke-width='1'/></svg>",
+        "view" => "<svg viewBox='0 0 16 16' fill='currentColor'><path d='M8 3C4 3 1 8 1 8s3 5 7 5 7-5 7-5-3-5-7-5z' fill='none' stroke='currentColor' stroke-width='1.2'/><circle cx='8' cy='8' r='2.5' fill='none' stroke='currentColor' stroke-width='1.2'/><circle cx='8' cy='8' r='1'/></svg>",
+        "procedure" => "<svg viewBox='0 0 16 16' fill='currentColor'><rect x='2' y='1' width='12' height='14' rx='1' fill='none' stroke='currentColor' stroke-width='1.2'/><path d='M5 4h6M5 7h6M5 10h4' stroke='currentColor' stroke-width='1'/><circle cx='12' cy='12' r='2' fill='currentColor'/></svg>",
+        "function" => "<svg viewBox='0 0 16 16' fill='currentColor'><text x='3' y='13' font-size='12' font-weight='bold' font-style='italic'>fx</text></svg>",
+        "trigger" => "<svg viewBox='0 0 16 16' fill='currentColor'><path d='M8 1L3 6h3v4H3l5 5 5-5h-3V6h3z'/></svg>",
+        "column" => "<svg viewBox='0 0 16 16' fill='currentColor'><rect x='5' y='1' width='6' height='14' rx='1' fill='none' stroke='currentColor' stroke-width='1.2'/><line x1='5' y1='4' x2='11' y2='4' stroke='currentColor' stroke-width='1'/><line x1='5' y1='7' x2='11' y2='7' stroke='currentColor' stroke-width='1'/><line x1='5' y1='10' x2='11' y2='10' stroke='currentColor' stroke-width='1'/></svg>",
+        "key" => "<svg viewBox='0 0 16 16' fill='currentColor'><circle cx='5' cy='5' r='3' fill='none' stroke='currentColor' stroke-width='1.5'/><path d='M7 7l7 7M11 14l3-3M10 11l2-2' stroke='currentColor' stroke-width='1.5'/></svg>",
+        "index" => "<svg viewBox='0 0 16 16' fill='currentColor'><path d='M3 3h10M3 6h8M3 9h6M3 12h4' stroke='currentColor' stroke-width='1.5'/><path d='M12 6l2-2M12 10l4-4' stroke='currentColor' stroke-width='1'/></svg>",
+        "constraint" => "<svg viewBox='0 0 16 16' fill='currentColor'><circle cx='8' cy='8' r='6' fill='none' stroke='currentColor' stroke-width='1.5'/><path d='M5 8l2 2 4-4' stroke='currentColor' stroke-width='1.5' fill='none'/></svg>",
+        "user" => "<svg viewBox='0 0 16 16' fill='currentColor'><circle cx='8' cy='4' r='3' fill='none' stroke='currentColor' stroke-width='1.2'/><path d='M2 14c0-3 2.7-5 6-5s6 2 6 5' fill='none' stroke='currentColor' stroke-width='1.2'/></svg>",
+        "folder" => "<svg viewBox='0 0 16 16' fill='currentColor'><path d='M1 3h5l2 2h7v9H1z' fill='none' stroke='currentColor' stroke-width='1.2'/></svg>",
+        "security" => "<svg viewBox='0 0 16 16' fill='currentColor'><path d='M8 1L2 4v4c0 3.5 2.6 6.8 6 8 3.4-1.2 6-4.5 6-8V4z' fill='none' stroke='currentColor' stroke-width='1.2'/><path d='M6 8l2 2 3-4' stroke='currentColor' stroke-width='1.5' fill='none'/></svg>",
+        "job" => "<svg viewBox='0 0 16 16' fill='currentColor'><circle cx='8' cy='8' r='6' fill='none' stroke='currentColor' stroke-width='1.2'/><path d='M8 4v4l3 2' stroke='currentColor' stroke-width='1.5' fill='none'/></svg>",
+        "schema" => "<svg viewBox='0 0 16 16' fill='currentColor'><rect x='1' y='3' width='6' height='4' rx='1' fill='none' stroke='currentColor' stroke-width='1'/><rect x='9' y='1' width='6' height='4' rx='1' fill='none' stroke='currentColor' stroke-width='1'/><rect x='9' y='7' width='6' height='4' rx='1' fill='none' stroke='currentColor' stroke-width='1'/><path d='M7 5h2M7 5v4h2' stroke='currentColor' stroke-width='1'/></svg>",
+        "role" => "<svg viewBox='0 0 16 16' fill='currentColor'><circle cx='6' cy='4' r='2.5' fill='none' stroke='currentColor' stroke-width='1'/><circle cx='10' cy='4' r='2.5' fill='none' stroke='currentColor' stroke-width='1'/><path d='M1 14c0-3 2-4.5 5-4.5M15 14c0-3-2-4.5-5-4.5' fill='none' stroke='currentColor' stroke-width='1'/></svg>",
+        _ => "<svg viewBox='0 0 16 16' fill='currentColor'><rect x='2' y='2' width='12' height='12' rx='2' fill='none' stroke='currentColor' stroke-width='1.2'/></svg>"
+    };
+}

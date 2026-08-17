@@ -1,0 +1,65 @@
+@typeparam TItem
+
+<div class="tab-control">
+    <div class="tab-header @(SmallTabs ? "tab-header-sm" : "")">
+        @foreach (var tab in Tabs)
+        {
+            var tabId = GetTabId(tab);
+            <div class="tab-item @(tabId == ActiveTabId ? "active" : "")"
+                 @onclick="() => SetActiveTab(tabId)">
+                @if (TabIcon != null)
+                {
+                    <span class="tab-item-icon">@TabIcon(tab)</span>
+                }
+                <span class="tab-item-title">@TabTitle(tab)</span>
+                @if (ShowDirtyIndicator && IsDirty != null && IsDirty(tab))
+                {
+                    <span class="tab-item-dirty"></span>
+                }
+                @if (Closeable)
+                {
+                    <button class="tab-item-close" @onclick="() => CloseTab(tab)" @onclick:stopPropagation>
+                        &times;
+                    </button>
+                }
+            </div>
+        }
+    </div>
+    <div class="tab-content">
+        @if (ActiveTab != null)
+        {
+            @ChildContent(ActiveTab)
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<TItem> Tabs { get; set; } = new();
+    [Parameter] public Func<TItem, string> TabId { get; set; } = _ => "";
+    [Parameter] public Func<TItem, string> TabTitle { get; set; } = _ => "";
+    [Parameter] public RenderFragment<TItem>? TabIcon { get; set; }
+    [Parameter] public RenderFragment<TItem> ChildContent { get; set; } = default!;
+    [Parameter] public bool Closeable { get; set; }
+    [Parameter] public bool SmallTabs { get; set; }
+    [Parameter] public bool ShowDirtyIndicator { get; set; }
+    [Parameter] public Func<TItem, bool>? IsDirty { get; set; }
+    [Parameter] public EventCallback<TItem> OnTabClosed { get; set; }
+    [Parameter] public EventCallback<string> OnActiveTabChanged { get; set; }
+    [Parameter] public string? ActiveTabId { get; set; }
+
+    private TItem? ActiveTab => Tabs.FirstOrDefault(t => GetTabId(t) == ActiveTabId) ??
+                                 Tabs.FirstOrDefault();
+
+    private string GetTabId(TItem tab) => TabId(tab);
+
+    private async Task SetActiveTab(string tabId)
+    {
+        ActiveTabId = tabId;
+        await OnActiveTabChanged.InvokeAsync(tabId);
+    }
+
+    private async Task CloseTab(TItem tab)
+    {
+        await OnTabClosed.InvokeAsync(tab);
+    }
+}

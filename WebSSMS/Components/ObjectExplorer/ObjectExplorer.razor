@@ -1,0 +1,387 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject ConnectionManager ConnectionManager
+@inject SchemaDiscoveryService SchemaService
+@inject ScriptGeneratorService ScriptGenerator
+
+<div class="sidebar">
+    <div class="sidebar-header">
+        <span>Object Explorer</span>
+        <div class="sidebar-header-actions">
+            <button class="toolbar-btn" title="Connect" @onclick="RequestConnect">
+                <svg viewBox="0 0 16 16" fill="var(--text-accent)" width="14" height="14">
+                    <path d="M2 3h4l2 2h6v8H2z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M7 7v4M5 9h4" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+            </button>
+            <button class="toolbar-btn" title="Disconnect" @onclick="RequestDisconnect"
+                    disabled="@(!ConnectionManager.IsConnected)">
+                <svg viewBox="0 0 16 16" fill="var(--text-error)" width="14" height="14">
+                    <path d="M2 3h4l2 2h6v8H2z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M5 9h6" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+            </button>
+            <button class="toolbar-btn" title="Refresh" @onclick="RefreshTree"
+                    disabled="@(!ConnectionManager.IsConnected)">
+                <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                    <path d="M13 3a7 7 0 1 0 1 4h-2a5 5 0 1 1-1-3l-2 2h5V1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+    <div class="sidebar-content">
+        @if (TreeNodes.Count > 0)
+        {
+            <TreeView Nodes="TreeNodes"
+                      SelectedNode="SelectedNode"
+                      OnNodeSelected="HandleNodeSelected"
+                      OnNodeExpanded="HandleNodeExpanded"
+                      OnNodeDoubleClicked="HandleNodeDoubleClicked"
+                      OnNodeContextMenu="HandleContextMenu" />
+        }
+        else if (!ConnectionManager.IsConnected)
+        {
+            <div style="padding: 16px; color: var(--text-secondary); font-size: var(--font-size-sm); text-align: center;">
+                <p>Not connected.</p>
+                <button class="btn btn-primary btn-sm" @onclick="RequestConnect">Connect to Server</button>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Context Menu -->
+<ContextMenu IsVisible="ShowContextMenu"
+             X="ContextMenuX" Y="ContextMenuY"
+             Items="ContextMenuItems"
+             OnClose="CloseContextMenu" />
+
+@code {
+    [Parameter] public EventCallback OnConnectRequested { get; set; }
+    [Parameter] public EventCallback OnDisconnectRequested { get; set; }
+    [Parameter] public EventCallback<string> OnNewQuery { get; set; }
+    [Parameter] public EventCallback<string> OnScriptGenerated { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeAction { get; set; }
+
+    private List<DatabaseObjectNode> TreeNodes = new();
+    private DatabaseObjectNode? SelectedNode;
+    private bool ShowContextMenu;
+    private double ContextMenuX, ContextMenuY;
+    private List<ContextMenuItem> ContextMenuItems = new();
+
+    public async Task LoadTreeAsync()
+    {
+        TreeNodes.Clear();
+
+        if (!ConnectionManager.IsConnected) return;
+
+        var serverInfo = await SchemaService.GetServerInfoAsync();
+        var serverNode = new DatabaseObjectNode
+        {
+            Name = $"{serverInfo.ServerName} ({serverInfo.ProductVersion} - {serverInfo.Edition})",
+            ObjectType = DatabaseObjectType.Server,
+            IsExpanded = true,
+            ChildrenLoaded = true
+        };
+
+        // Databases folder
+        var dbFolder = new DatabaseObjectNode
+        {
+            Name = "Databases",
+            ObjectType = DatabaseObjectType.DatabasesFolder
+        };
+
+        var databases = await SchemaService.GetDatabasesAsync();
+        foreach (var db in databases)
+        {
+            var dbNode = new DatabaseObjectNode
+            {
+                Name = db,
+                ObjectType = DatabaseObjectType.Database,
+                DatabaseName = db
+            };
+            dbFolder.Children.Add(dbNode);
+        }
+        dbFolder.ChildrenLoaded = true;
+
+        serverNode.Children.Add(dbFolder);
+
+        // Security folder
+        var securityFolder = new DatabaseObjectNode
+        {
+            Name = "Security",
+            ObjectType = DatabaseObjectType.SecurityFolder
+        };
+        securityFolder.Children.Add(new DatabaseObjectNode { Name = "Logins", ObjectType = DatabaseObjectType.LoginsFolder });
+        securityFolder.Children.Add(new DatabaseObjectNode { Name = "Server Roles", ObjectType = DatabaseObjectType.RolesFolder });
+        securityFolder.ChildrenLoaded = true;
+        serverNode.Children.Add(securityFolder);
+
+        // Agent Jobs folder
+        var agentFolder = new DatabaseObjectNode
+        {
+            Name = "SQL Server Agent",
+            ObjectType = DatabaseObjectType.ServerObjectsFolder
+        };
+        agentFolder.Children.Add(new DatabaseObjectNode { Name = "Jobs", ObjectType = DatabaseObjectType.AgentJobsFolder });
+        agentFolder.ChildrenLoaded = true;
+        serverNode.Children.Add(agentFolder);
+
+        TreeNodes.Add(serverNode);
+        StateHasChanged();
+    }
+
+    private async Task HandleNodeExpanded(DatabaseObjectNode node)
+    {
+        if (node.ChildrenLoaded) return;
+
+        node.IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            switch (node.ObjectType)
+            {
+                case DatabaseObjectType.Database:
+                    await LoadDatabaseChildrenAsync(node);
+                    break;
+                case DatabaseObjectType.TablesFolder:
+                    var tables = await SchemaService.GetTablesAsync(node.DatabaseName!);
+                    node.Children = tables;
+                    break;
+                case DatabaseObjectType.ViewsFolder:
+                    var views = await SchemaService.GetViewsAsync(node.DatabaseName!);
+                    node.Children = views;
+                    break;
+                case DatabaseObjectType.ProceduresFolder:
+                    var procs = await SchemaService.GetProceduresAsync(node.DatabaseName!);
+                    node.Children = procs;
+                    break;
+                case DatabaseObjectType.FunctionsFolder:
+                    var funcs = await SchemaService.GetFunctionsAsync(node.DatabaseName!);
+                    node.Children = funcs;
+                    break;
+                case DatabaseObjectType.Table:
+                case DatabaseObjectType.View:
+                    await LoadTableChildrenAsync(node);
+                    break;
+                case DatabaseObjectType.ColumnsFolder:
+                    var columns = await SchemaService.GetColumnsAsync(node.DatabaseName!, node.ParentName!.Split('.')[0], node.ParentName.Split('.')[1]);
+                    node.Children = columns;
+                    break;
+                case DatabaseObjectType.KeysFolder:
+                    var keys = await SchemaService.GetForeignKeysAsync(node.DatabaseName!, node.ParentName!.Split('.')[0], node.ParentName.Split('.')[1]);
+                    node.Children = keys;
+                    break;
+                case DatabaseObjectType.IndexesFolder:
+                    var indexes = await SchemaService.GetIndexesAsync(node.DatabaseName!, node.ParentName!.Split('.')[0], node.ParentName.Split('.')[1]);
+                    node.Children = indexes;
+                    break;
+                case DatabaseObjectType.TriggersFolder:
+                    var triggers = await SchemaService.GetTriggersAsync(node.DatabaseName!, node.ParentName!.Split('.')[0], node.ParentName.Split('.')[1]);
+                    node.Children = triggers;
+                    break;
+                case DatabaseObjectType.ConstraintsFolder:
+                    var constraints = await SchemaService.GetCheckConstraintsAsync(node.DatabaseName!, node.ParentName!.Split('.')[0], node.ParentName.Split('.')[1]);
+                    node.Children = constraints;
+                    break;
+                case DatabaseObjectType.SynonymsFolder:
+                    var synonyms = await SchemaService.GetSynonymsAsync(node.DatabaseName!);
+                    node.Children = synonyms;
+                    break;
+                case DatabaseObjectType.TypesFolder:
+                    var types = await SchemaService.GetUserDefinedTypesAsync(node.DatabaseName!);
+                    node.Children = types;
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            node.Children = new List<DatabaseObjectNode>
+            {
+                new() { Name = $"Error: {ex.Message}", ObjectType = DatabaseObjectType.Column }
+            };
+        }
+
+        node.IsLoading = false;
+        node.ChildrenLoaded = true;
+        StateHasChanged();
+    }
+
+    private Task LoadDatabaseChildrenAsync(DatabaseObjectNode dbNode)
+    {
+        var db = dbNode.Name;
+        dbNode.Children = new List<DatabaseObjectNode>
+        {
+            new() { Name = "Tables", ObjectType = DatabaseObjectType.TablesFolder, DatabaseName = db },
+            new() { Name = "Views", ObjectType = DatabaseObjectType.ViewsFolder, DatabaseName = db },
+            new() { Name = "Programmability", ObjectType = DatabaseObjectType.ProceduresFolder, DatabaseName = db },
+            new() { Name = "Synonyms", ObjectType = DatabaseObjectType.SynonymsFolder, DatabaseName = db },
+            new() { Name = "Types", ObjectType = DatabaseObjectType.TypesFolder, DatabaseName = db },
+            new() { Name = "Security", ObjectType = DatabaseObjectType.SecurityFolder, DatabaseName = db }
+        };
+
+        // Programmability subfolder
+        var progNode = dbNode.Children[2];
+        progNode.Children = new List<DatabaseObjectNode>
+        {
+            new() { Name = "Stored Procedures", ObjectType = DatabaseObjectType.ProceduresFolder, DatabaseName = db },
+            new() { Name = "Functions", ObjectType = DatabaseObjectType.FunctionsFolder, DatabaseName = db }
+        };
+        progNode.ChildrenLoaded = true;
+
+        // Security subfolder
+        var secNode = dbNode.Children[5];
+        secNode.Children = new List<DatabaseObjectNode>
+        {
+            new() { Name = "Users", ObjectType = DatabaseObjectType.UsersFolder, DatabaseName = db },
+            new() { Name = "Roles", ObjectType = DatabaseObjectType.RolesFolder, DatabaseName = db },
+            new() { Name = "Schemas", ObjectType = DatabaseObjectType.SchemasFolder, DatabaseName = db }
+        };
+        secNode.ChildrenLoaded = true;
+
+        dbNode.ChildrenLoaded = true;
+        return Task.CompletedTask;
+    }
+
+    private Task LoadTableChildrenAsync(DatabaseObjectNode tableNode)
+    {
+        var parentKey = $"{tableNode.SchemaName}.{tableNode.Name}";
+        tableNode.Children = new List<DatabaseObjectNode>
+        {
+            new() { Name = "Columns", ObjectType = DatabaseObjectType.ColumnsFolder, DatabaseName = tableNode.DatabaseName, ParentName = parentKey },
+            new() { Name = "Keys", ObjectType = DatabaseObjectType.KeysFolder, DatabaseName = tableNode.DatabaseName, ParentName = parentKey },
+            new() { Name = "Constraints", ObjectType = DatabaseObjectType.ConstraintsFolder, DatabaseName = tableNode.DatabaseName, ParentName = parentKey },
+            new() { Name = "Triggers", ObjectType = DatabaseObjectType.TriggersFolder, DatabaseName = tableNode.DatabaseName, ParentName = parentKey },
+            new() { Name = "Indexes", ObjectType = DatabaseObjectType.IndexesFolder, DatabaseName = tableNode.DatabaseName, ParentName = parentKey }
+        };
+        tableNode.ChildrenLoaded = true;
+        return Task.CompletedTask;
+    }
+
+    private void HandleNodeSelected(DatabaseObjectNode node)
+    {
+        SelectedNode = node;
+    }
+
+    private async Task HandleNodeDoubleClicked(DatabaseObjectNode node)
+    {
+        // Double-click on leaf nodes generates script
+        if (node.ObjectType is DatabaseObjectType.Table or DatabaseObjectType.View)
+        {
+            var script = await ScriptGenerator.ScriptSelectTopAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+            await OnScriptGenerated.InvokeAsync(script);
+        }
+        else if (node.ObjectType is DatabaseObjectType.Procedure or DatabaseObjectType.ScalarFunction or DatabaseObjectType.TableFunction)
+        {
+            var script = await ScriptGenerator.ScriptProcedureAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+            await OnScriptGenerated.InvokeAsync(script);
+        }
+    }
+
+    private void HandleContextMenu((DatabaseObjectNode Node, double X, double Y) args)
+    {
+        ContextMenuItems = BuildContextMenu(args.Node);
+        ContextMenuX = args.X;
+        ContextMenuY = args.Y;
+        ShowContextMenu = true;
+    }
+
+    private List<ContextMenuItem> BuildContextMenu(DatabaseObjectNode node)
+    {
+        var items = new List<ContextMenuItem>();
+
+        switch (node.ObjectType)
+        {
+            case DatabaseObjectType.Database:
+                items.Add(new ContextMenuItem { Label = "New Query", OnClick = () => OnNewQuery.InvokeAsync(node.Name) });
+                items.Add(ContextMenuItem.Separator());
+                items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });
+                items.Add(new ContextMenuItem { Label = "Properties...", OnClick = () => OnNodeAction.InvokeAsync(node) });
+                break;
+
+            case DatabaseObjectType.Table:
+                items.Add(new ContextMenuItem { Label = "Select Top 1000 Rows", OnClick = async () =>
+                {
+                    var script = await ScriptGenerator.ScriptSelectTopAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+                    await OnScriptGenerated.InvokeAsync(script);
+                }});
+                items.Add(new ContextMenuItem { Label = "Edit Top 200 Rows", OnClick = () => OnNodeAction.InvokeAsync(node) });
+                items.Add(ContextMenuItem.Separator());
+                items.Add(new ContextMenuItem { Label = "Script Table as CREATE", OnClick = async () =>
+                {
+                    var script = await ScriptGenerator.ScriptTableAsCreateAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+                    await OnScriptGenerated.InvokeAsync(script);
+                }});
+                items.Add(new ContextMenuItem { Label = "Script Table as DROP", OnClick = async () =>
+                {
+                    var script = await ScriptGenerator.ScriptTableAsDropAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+                    await OnScriptGenerated.InvokeAsync(script);
+                }});
+                items.Add(ContextMenuItem.Separator());
+                items.Add(new ContextMenuItem { Label = "Design", OnClick = () => OnNodeAction.InvokeAsync(node) });
+                items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });
+                break;
+
+            case DatabaseObjectType.View:
+                items.Add(new ContextMenuItem { Label = "Select Top 1000 Rows", OnClick = async () =>
+                {
+                    var script = await ScriptGenerator.ScriptSelectTopAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+                    await OnScriptGenerated.InvokeAsync(script);
+                }});
+                items.Add(new ContextMenuItem { Label = "Script View as CREATE", OnClick = async () =>
+                {
+                    var script = await ScriptGenerator.ScriptViewAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+                    await OnScriptGenerated.InvokeAsync(script);
+                }});
+                break;
+
+            case DatabaseObjectType.Procedure:
+                items.Add(new ContextMenuItem { Label = "Script Procedure", OnClick = async () =>
+                {
+                    var script = await ScriptGenerator.ScriptProcedureAsync(node.DatabaseName!, node.SchemaName!, node.Name);
+                    await OnScriptGenerated.InvokeAsync(script);
+                }});
+                items.Add(new ContextMenuItem { Label = "Execute", OnClick = () => OnNodeAction.InvokeAsync(node) });
+                break;
+
+            case DatabaseObjectType.TablesFolder:
+                items.Add(new ContextMenuItem { Label = "New Table...", OnClick = () => OnNodeAction.InvokeAsync(node) });
+                items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });
+                break;
+
+            default:
+                items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });
+                break;
+        }
+
+        return items;
+    }
+
+    private async Task RefreshNode(DatabaseObjectNode node)
+    {
+        node.ChildrenLoaded = false;
+        node.Children.Clear();
+        node.IsExpanded = true;
+        await HandleNodeExpanded(node);
+    }
+
+    private async Task RefreshTree()
+    {
+        await LoadTreeAsync();
+    }
+
+    private async Task RequestConnect()
+    {
+        await OnConnectRequested.InvokeAsync();
+    }
+
+    private async Task RequestDisconnect()
+    {
+        await OnDisconnectRequested.InvokeAsync();
+    }
+
+    private void CloseContextMenu()
+    {
+        ShowContextMenu = false;
+    }
+}

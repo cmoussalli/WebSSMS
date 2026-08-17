@@ -1,0 +1,113 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SecurityService SecurityService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <DropdownButton Items="Databases" Value="@SelectedDatabase"
+                            OnSelectionChanged="ChangeDatabase" Style="min-width: 150px;" />
+        </div>
+        <div class="toolbar-separator"></div>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="LoadUsers">
+            <span>Refresh</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="ShowCreateUser">
+            <span>New User</span>
+        </button>
+    </div>
+
+    <div style="flex: 1; overflow: auto;">
+        <table class="data-grid" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>User Name</th>
+                    <th>Login Name</th>
+                    <th>Default Schema</th>
+                    <th>Database Roles</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Users)
+                {
+                    <tr>
+                        <td>@user.Name</td>
+                        <td>@user.LoginName</td>
+                        <td>@user.DefaultSchema</td>
+                        <td>@string.Join(", ", user.DatabaseRoles)</td>
+                        <td>@user.CreateDate?.ToString("yyyy-MM-dd")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<Modal IsVisible="ShowCreateUserDialog" Title="New Database User" OnClose="() => ShowCreateUserDialog = false" Size="Modal.ModalSize.Medium">
+    <ChildContent>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">User name:</label>
+            <input class="form-input" @bind="NewUser.Name" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Login:</label>
+            <input class="form-input" @bind="NewUser.LoginName" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Default schema:</label>
+            <input class="form-input" @bind="NewUser.DefaultSchema" />
+        </div>
+        @if (CreateError != null)
+        {
+            <div class="form-error">@CreateError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-primary" @onclick="CreateUser">Create</button>
+        <button class="btn" @onclick="() => ShowCreateUserDialog = false">Cancel</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    private string SelectedDatabase = "master";
+    private List<DatabaseUserDefinition> Users = new();
+    private bool ShowCreateUserDialog;
+    private DatabaseUserDefinition NewUser = new();
+    private string? CreateError;
+
+    private async Task ChangeDatabase(string db)
+    {
+        SelectedDatabase = db;
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        Users = await SecurityService.GetDatabaseUsersAsync(SelectedDatabase);
+    }
+
+    private void ShowCreateUser()
+    {
+        NewUser = new DatabaseUserDefinition { DatabaseName = SelectedDatabase, DefaultSchema = "dbo" };
+        CreateError = null;
+        ShowCreateUserDialog = true;
+    }
+
+    private async Task CreateUser()
+    {
+        NewUser.DatabaseName = SelectedDatabase;
+        var (success, error) = await SecurityService.CreateDatabaseUserAsync(NewUser);
+        if (success)
+        {
+            ShowCreateUserDialog = false;
+            await LoadUsers();
+        }
+        else
+        {
+            CreateError = error;
+        }
+    }
+}

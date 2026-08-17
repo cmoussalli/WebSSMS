@@ -1,0 +1,159 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject ConnectionManager ConnectionManager
+
+<Modal IsVisible="IsVisible" Title="Connect to Server" OnClose="Cancel" Size="Modal.ModalSize.Medium">
+    <ChildContent>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Server name:</label>
+            <input class="form-input" @bind="ConnectionInfo.ServerName" placeholder="localhost" />
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Port:</label>
+            <input class="form-input" type="number" @bind="ConnectionInfo.Port" style="width: 100px" />
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Login:</label>
+            <input class="form-input" @bind="ConnectionInfo.UserName" placeholder="sa" />
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Password:</label>
+            <input class="form-input" type="password" @bind="ConnectionInfo.Password" />
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Database:</label>
+            <input class="form-input" @bind="ConnectionInfo.DatabaseName" placeholder="master (default)" />
+        </div>
+
+        <div class="form-group">
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="ConnectionInfo.TrustServerCertificate" />
+                Trust Server Certificate
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="ConnectionInfo.Encrypt" />
+                Encrypt Connection
+            </label>
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Connect timeout:</label>
+            <input class="form-input" type="number" @bind="ConnectionInfo.ConnectTimeout" style="width: 80px" />
+            <span style="color: var(--text-secondary); font-size: var(--font-size-xs)">seconds</span>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="form-error" style="margin-top: 8px; padding: 8px; background: rgba(190,17,0,0.1); border-radius: 4px;">
+                @ErrorMessage
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(SuccessMessage))
+        {
+            <div style="margin-top: 8px; padding: 8px; background: rgba(45,139,45,0.1); border-radius: 4px; color: var(--text-success); font-size: var(--font-size-sm);">
+                @SuccessMessage
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn" @onclick="TestConnection" disabled="@IsLoading">
+            @(IsTestingConnection ? "Testing..." : "Test Connection")
+        </button>
+        <button class="btn btn-primary" @onclick="Connect" disabled="@IsLoading">
+            @(IsConnecting ? "Connecting..." : "Connect")
+        </button>
+        <button class="btn" @onclick="Cancel">Cancel</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<ConnectionInfo> OnConnected { get; set; }
+
+    private ConnectionInfo ConnectionInfo { get; set; } = new()
+    {
+        ServerName = "localhost",
+        Port = 1433,
+        TrustServerCertificate = true,
+        Encrypt = true
+    };
+
+    private string? ErrorMessage;
+    private string? SuccessMessage;
+    private bool IsConnecting;
+    private bool IsTestingConnection;
+    private bool IsLoading => IsConnecting || IsTestingConnection;
+
+    private async Task Connect()
+    {
+        ErrorMessage = null;
+        SuccessMessage = null;
+        IsConnecting = true;
+        StateHasChanged();
+
+        try
+        {
+            var (success, error) = await ConnectionManager.ConnectAsync(ConnectionInfo);
+            if (success)
+            {
+                await OnConnected.InvokeAsync(ConnectionInfo);
+                await OnClose.InvokeAsync();
+                // Reset for next use
+                ConnectionInfo = new ConnectionInfo
+                {
+                    ServerName = ConnectionInfo.ServerName,
+                    Port = ConnectionInfo.Port,
+                    UserName = ConnectionInfo.UserName,
+                    Password = ConnectionInfo.Password,
+                    TrustServerCertificate = ConnectionInfo.TrustServerCertificate,
+                    Encrypt = ConnectionInfo.Encrypt
+                };
+            }
+            else
+            {
+                ErrorMessage = error;
+            }
+        }
+        finally
+        {
+            IsConnecting = false;
+        }
+    }
+
+    private async Task TestConnection()
+    {
+        ErrorMessage = null;
+        SuccessMessage = null;
+        IsTestingConnection = true;
+        StateHasChanged();
+
+        try
+        {
+            var (success, error) = await ConnectionManager.TestConnectionAsync(ConnectionInfo);
+            if (success)
+                SuccessMessage = "Connection successful!";
+            else
+                ErrorMessage = error;
+        }
+        finally
+        {
+            IsTestingConnection = false;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        ErrorMessage = null;
+        SuccessMessage = null;
+        await OnClose.InvokeAsync();
+    }
+}

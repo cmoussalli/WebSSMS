@@ -1,0 +1,48 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SchemaDiscoveryService SchemaService
+@inject MonitoringService MonitoringService
+
+<div style="padding: 16px; overflow: auto; height: 100%;">
+    @if (ServerInfo != null)
+    {
+        <div style="font-size: var(--font-size-lg); font-weight: 600; margin-bottom: 16px;">
+            Server Properties - @ServerInfo.ServerName
+        </div>
+
+        <div class="property-grid" style="max-width: 600px;">
+            <div class="property-grid-category">General</div>
+            <div class="property-grid-label">Server Name</div>
+            <div class="property-grid-value">@ServerInfo.ServerName</div>
+            <div class="property-grid-label">Product</div>
+            <div class="property-grid-value">Microsoft SQL Server @ServerInfo.ProductVersion</div>
+            <div class="property-grid-label">Product Level</div>
+            <div class="property-grid-value">@ServerInfo.ProductLevel</div>
+            <div class="property-grid-label">Edition</div>
+            <div class="property-grid-value">@ServerInfo.Edition</div>
+            <div class="property-grid-label">Engine Edition</div>
+            <div class="property-grid-value">@ServerInfo.EngineEdition</div>
+            <div class="property-grid-label">Server Collation</div>
+            <div class="property-grid-value">@ServerInfo.Collation</div>
+
+            <div class="property-grid-category">Cluster</div>
+            <div class="property-grid-label">Is Clustered</div>
+            <div class="property-grid-value">@(ServerInfo.IsClustered ? "Yes" : "No")</div>
+            <div class="property-grid-label">Always On (HADR)</div>
+            <div class="property-grid-value">@(ServerInfo.IsHadrEnabled ? "Enabled" : "Disabled")</div>
+        </div>
+    }
+    else
+    {
+        <div style="color: var(--text-muted);">Loading server properties...</div>
+    }
+</div>
+
+@code {
+    private ServerInfo? ServerInfo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ServerInfo = await SchemaService.GetServerInfoAsync();
+    }
+}

@@ -1,0 +1,63 @@
+@using WebSSMS.Models
+@inject IJSRuntime JS
+
+@if (IsVisible)
+{
+    <div class="context-menu" id="@MenuId" style="left: @(X)px; top: @(Y)px;">
+        @foreach (var item in Items)
+        {
+            @if (item.IsSeparator)
+            {
+                <div class="context-menu-separator"></div>
+            }
+            else
+            {
+                <div class="context-menu-item @(item.IsEnabled ? "" : "disabled")"
+                     @onclick="() => HandleItemClick(item)">
+                    <span class="context-menu-item-icon">
+                        @if (item.Icon != null)
+                        {
+                            @item.Icon
+                        }
+                    </span>
+                    <span class="context-menu-item-label">@item.Label</span>
+                    @if (!string.IsNullOrEmpty(item.Shortcut))
+                    {
+                        <span class="context-menu-item-shortcut">@item.Shortcut</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public double X { get; set; }
+    [Parameter] public double Y { get; set; }
+    [Parameter] public List<ContextMenuItem> Items { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string MenuId = $"ctx-menu-{Guid.NewGuid():N}";
+
+    private async Task HandleItemClick(ContextMenuItem item)
+    {
+        if (!item.IsEnabled) return;
+
+        await OnClose.InvokeAsync();
+        if (item.OnClick != null)
+            await item.OnClick.Invoke();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (IsVisible)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("WebSSMS.ContextMenu.show", MenuId, X, Y);
+            }
+            catch { }
+        }
+    }
+}

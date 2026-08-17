@@ -1,0 +1,87 @@
+@using WebSSMS.Models
+
+<div class="sidebar" style="width: 250px; border-right: 1px solid var(--border-primary);">
+    <div class="sidebar-header">
+        <span>Registered Servers</span>
+        <div class="sidebar-header-actions">
+            <button class="toolbar-btn" title="Add Server" @onclick="AddServer">
+                <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                    <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" fill="none"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+    <div class="sidebar-content">
+        <div class="tree-view">
+            @foreach (var group in Groups)
+            {
+                <div class="tree-node">
+                    <div class="tree-node-row" style="padding-left: 4px" @onclick="() => ToggleGroup(group.Key)">
+                        <span class="tree-node-expander @(ExpandedGroups.Contains(group.Key) ? "expanded" : "")">
+                            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                                <path d="M6 4l4 4-4 4z"/>
+                            </svg>
+                        </span>
+                        <span class="tree-node-icon icon-folder">
+                            <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+                                <path d="M1 3h5l2 2h7v9H1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                            </svg>
+                        </span>
+                        <span class="tree-node-label">@group.Key</span>
+                    </div>
+                    @if (ExpandedGroups.Contains(group.Key))
+                    {
+                        @foreach (var server in group)
+                        {
+                            <div class="tree-node-row @(SelectedServer?.Id == server.Id ? "selected" : "")"
+                                 style="padding-left: 24px"
+                                 @onclick="() => SelectServer(server)"
+                                 @ondblclick="() => ConnectToServer(server)">
+                                <span class="tree-node-icon icon-server">
+                                    <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+                                        <rect x="2" y="1" width="12" height="4" rx="1"/>
+                                        <rect x="2" y="6" width="12" height="4" rx="1"/>
+                                    </svg>
+                                </span>
+                                <span class="tree-node-label">@server.Name</span>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<SavedConnection> SavedConnections { get; set; } = new();
+    [Parameter] public EventCallback<SavedConnection> OnConnect { get; set; }
+    [Parameter] public EventCallback OnAddServer { get; set; }
+
+    private SavedConnection? SelectedServer;
+    private HashSet<string> ExpandedGroups = new() { "Local Servers" };
+
+    private IEnumerable<IGrouping<string, SavedConnection>> Groups =>
+        SavedConnections.GroupBy(s => s.Group);
+
+    private void ToggleGroup(string group)
+    {
+        if (!ExpandedGroups.Add(group))
+            ExpandedGroups.Remove(group);
+    }
+
+    private void SelectServer(SavedConnection server)
+    {
+        SelectedServer = server;
+    }
+
+    private async Task ConnectToServer(SavedConnection server)
+    {
+        await OnConnect.InvokeAsync(server);
+    }
+
+    private async Task AddServer()
+    {
+        await OnAddServer.InvokeAsync();
+    }
+}

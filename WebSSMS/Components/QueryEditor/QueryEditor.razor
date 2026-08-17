@@ -1,0 +1,132 @@
+@using WebSSMS.Models
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div id="@EditorId" class="query-editor-container" style="width: 100%; height: 100%;"></div>
+
+@code {
+    [Parameter] public string Content { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ContentChanged { get; set; }
+    [Parameter] public EventCallback OnExecuteRequested { get; set; }
+    [Parameter] public EventCallback<string> OnExecuteSelectionRequested { get; set; }
+    [Parameter] public EventCallback OnParseRequested { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+
+    private string EditorId = $"monaco-editor-{Guid.NewGuid():N}";
+    private DotNetObjectReference<QueryEditor>? _dotnetRef;
+    private bool _initialized;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialized)
+        {
+            _dotnetRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("WebSSMS.Monaco.initialize", EditorId, Content, "sql", _dotnetRef);
+                _initialized = true;
+
+                if (ReadOnly)
+                {
+                    await JS.InvokeVoidAsync("WebSSMS.Monaco.setReadOnly", EditorId, true);
+                }
+            }
+            catch { }
+        }
+    }
+
+    public async Task SetContentAsync(string content)
+    {
+        Content = content;
+        if (_initialized)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("WebSSMS.Monaco.setValue", EditorId, content);
+            }
+            catch { }
+        }
+    }
+
+    public async Task<string> GetContentAsync()
+    {
+        if (_initialized)
+        {
+            try
+            {
+                return await JS.InvokeAsync<string>("WebSSMS.Monaco.getValue", EditorId);
+            }
+            catch { }
+        }
+        return Content;
+    }
+
+    public async Task<string> GetSelectedTextAsync()
+    {
+        if (_initialized)
+        {
+            try
+            {
+                return await JS.InvokeAsync<string>("WebSSMS.Monaco.getSelectedText", EditorId);
+            }
+            catch { }
+        }
+        return string.Empty;
+    }
+
+    public async Task FocusAsync()
+    {
+        if (_initialized)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("WebSSMS.Monaco.focus", EditorId);
+            }
+            catch { }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnContentChanged(string value)
+    {
+        Content = value;
+        await ContentChanged.InvokeAsync(value);
+    }
+
+    [JSInvokable]
+    public async Task OnExecuteRequested_JS()
+    {
+        await OnExecuteRequested.InvokeAsync();
+    }
+
+    [JSInvokable("OnExecuteRequested")]
+    public async Task OnExecuteRequestedFromJs()
+    {
+        await OnExecuteRequested.InvokeAsync();
+    }
+
+    [JSInvokable("OnExecuteSelectionRequested")]
+    public async Task OnExecuteSelectionRequestedFromJs(string selectedText)
+    {
+        await OnExecuteSelectionRequested.InvokeAsync(selectedText);
+    }
+
+    [JSInvokable("OnParseRequested")]
+    public async Task OnParseRequestedFromJs()
+    {
+        await OnParseRequested.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_initialized)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("WebSSMS.Monaco.dispose", EditorId);
+            }
+            catch { }
+        }
+        _dotnetRef?.Dispose();
+    }
+}

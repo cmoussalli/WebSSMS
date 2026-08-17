@@ -1,0 +1,151 @@
+/* === Data Grid === */
+.data-grid-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+}
+
+.data-grid-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-primary);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.data-grid-wrapper {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+}
+
+.data-grid {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+}
+
+.data-grid thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.data-grid th {
+    background: var(--bg-grid-header);
+    border: 1px solid var(--border-primary);
+    padding: 4px 8px;
+    text-align: left;
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    cursor: default;
+    position: relative;
+    user-select: none;
+    min-width: 60px;
+}
+
+.data-grid th.sortable {
+    cursor: pointer;
+}
+
+.data-grid th.sortable:hover {
+    background: var(--bg-hover);
+}
+
+.data-grid th .sort-indicator {
+    margin-left: 4px;
+    font-size: 10px;
+    color: var(--text-accent);
+}
+
+.data-grid th .resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    background: transparent;
+}
+
+.data-grid th .resize-handle:hover,
+.data-grid th .resize-handle.active {
+    background: var(--border-focus);
+}
+
+.data-grid td {
+    border: 1px solid var(--border-primary);
+    padding: 2px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 400px;
+    height: 24px;
+}
+
+.data-grid tbody tr {
+    background: var(--bg-grid-row);
+}
+
+.data-grid tbody tr:nth-child(even) {
+    background: var(--bg-grid-row-alt);
+}
+
+.data-grid tbody tr:hover {
+    background: var(--bg-grid-row-hover);
+}
+
+.data-grid tbody tr.selected {
+    background: var(--bg-grid-row-selected);
+    color: var(--text-white);
+}
+
+/* Row number column */
+.data-grid .row-number {
+    background: var(--bg-grid-header);
+    color: var(--text-secondary);
+    text-align: right;
+    padding-right: 12px;
+    min-width: 50px;
+    width: 50px;
+    font-size: var(--font-size-xs);
+    border-right: 2px solid var(--border-secondary);
+    user-select: none;
+}
+
+/* NULL value display */
+.data-grid .cell-null {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Editable cell */
+.data-grid td.editable:focus {
+    outline: 2px solid var(--border-focus);
+    outline-offset: -2px;
+    background: var(--bg-input);
+}
+
+/* Grid footer */
+.data-grid-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border-primary);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.data-grid-footer-info {
+    display: flex;
+    gap: 16px;
+}

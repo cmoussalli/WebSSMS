@@ -1,0 +1,79 @@
+@using WebSSMS.Models
+
+<div class="tab-control" style="height: 100%;">
+    <div class="tab-header tab-header-sm">
+        <div class="tab-item @(ActiveResultTab == "results" ? "active" : "")"
+             @onclick='() => ActiveResultTab = "results"'>
+            <span class="tab-item-title">Results</span>
+        </div>
+        <div class="tab-item @(ActiveResultTab == "messages" ? "active" : "")"
+             @onclick='() => ActiveResultTab = "messages"'>
+            <span class="tab-item-title">Messages</span>
+            @if (Result?.HasErrors == true)
+            {
+                <span class="badge badge-error" style="margin-left: 4px;">!</span>
+            }
+        </div>
+        @if (Result?.ExecutionPlanXml != null)
+        {
+            <div class="tab-item @(ActiveResultTab == "plan" ? "active" : "")"
+                 @onclick='() => ActiveResultTab = "plan"'>
+                <span class="tab-item-title">Execution Plan</span>
+            </div>
+        }
+    </div>
+
+    <div class="tab-content">
+        @if (IsExecuting)
+        {
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; gap: 8px; color: var(--text-secondary);">
+                <div class="spinner" style="width: 16px; height: 16px; border: 2px solid var(--border-secondary); border-top-color: var(--text-accent); border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                <span>Executing query...</span>
+            </div>
+        }
+        else if (Result != null)
+        {
+            @if (ActiveResultTab == "results")
+            {
+                <ResultsGrid Result="Result" />
+            }
+            else if (ActiveResultTab == "messages")
+            {
+                <MessagesPanel Messages="Result.Messages" ExecutionTime="Result.ExecutionTime" />
+            }
+            else if (ActiveResultTab == "plan")
+            {
+                <ExecutionPlanView PlanXml="Result.ExecutionPlanXml" />
+            }
+        }
+        else
+        {
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: var(--font-size-sm);">
+                No results to display. Execute a query to see results here.
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public QueryResult? Result { get; set; }
+    [Parameter] public bool IsExecuting { get; set; }
+
+    private string ActiveResultTab = "results";
+
+    protected override void OnParametersSet()
+    {
+        if (Result?.HasErrors == true)
+        {
+            ActiveResultTab = "messages";
+        }
+        else if (Result?.ResultSets.Count > 0)
+        {
+            ActiveResultTab = "results";
+        }
+        else if (Result != null)
+        {
+            ActiveResultTab = "messages";
+        }
+    }
+}

@@ -1,0 +1,23 @@
+/* WebSSMS Global Styles - Additional overrides */
+
+h1:focus {
+    outline: none;
+}
+
+.blazor-error-boundary {
+    background: var(--bg-toast-error);
+    padding: 1rem;
+    color: white;
+}
+
+.blazor-error-boundary::after {
+    content: "An error has occurred."
+}
+
+/* Ensure body fills viewport */
+html, body, #app, .page {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}

@@ -1,0 +1,133 @@
+/* === Tab Control === */
+.tab-control {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.tab-header {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-primary);
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-height: var(--tab-height);
+    scrollbar-width: none;
+}
+
+.tab-header::-webkit-scrollbar {
+    height: 0;
+}
+
+.tab-item {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    height: var(--tab-height);
+    min-width: 120px;
+    max-width: 200px;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    background: var(--bg-tab-inactive);
+    border-right: 1px solid var(--border-primary);
+    user-select: none;
+    gap: 6px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.tab-item:hover {
+    background: var(--bg-tab-hover);
+    color: var(--text-primary);
+}
+
+.tab-item.active {
+    background: var(--bg-tab-active);
+    color: var(--text-primary);
+    border-top: 2px solid var(--border-focus);
+}
+
+.tab-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--bg-tab-active);
+}
+
+.tab-item-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+}
+
+.tab-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.tab-item-dirty {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-primary);
+    flex-shrink: 0;
+}
+
+.tab-item-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 3px;
+    flex-shrink: 0;
+    opacity: 0;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.tab-item:hover .tab-item-close,
+.tab-item.active .tab-item-close {
+    opacity: 1;
+}
+
+.tab-item-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.tab-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.tab-panel {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+}
+
+.tab-panel.hidden {
+    display: none;
+}
+
+/* Small tabs (for Results panel) */
+.tab-header-sm .tab-item {
+    height: 28px;
+    min-width: 80px;
+    padding: 0 10px;
+    font-size: var(--font-size-xs);
+}

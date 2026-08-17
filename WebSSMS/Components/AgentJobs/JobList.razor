@@ -1,0 +1,154 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject AgentJobService AgentJobService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <button class="toolbar-btn toolbar-btn-text" @onclick="LoadJobs">
+            <span>Refresh</span>
+        </button>
+    </div>
+
+    <div style="flex: 1; overflow: auto;">
+        <table class="data-grid" style="width: max-content; min-width: 100%;">
+            <thead>
+                <tr>
+                    <th>Job Name</th>
+                    <th>Enabled</th>
+                    <th>Category</th>
+                    <th>Last Run Status</th>
+                    <th>Owner</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in Jobs)
+                {
+                    <tr>
+                        <td>@job.Name</td>
+                        <td>
+                            <span class="badge @(job.IsEnabled ? "badge-success" : "badge-error")">
+                                @(job.IsEnabled ? "Yes" : "No")
+                            </span>
+                        </td>
+                        <td>@job.CategoryName</td>
+                        <td>
+                            @if (job.LastRunStatus != null)
+                            {
+                                <span class="badge @GetStatusBadge(job.LastRunStatus)">@job.LastRunStatus</span>
+                            }
+                        </td>
+                        <td>@job.OwnerName</td>
+                        <td>@job.CreateDate.ToString("yyyy-MM-dd")</td>
+                        <td style="display: flex; gap: 4px;">
+                            <button class="btn btn-sm" @onclick="() => StartJob(job)"
+                                    disabled="@(!job.IsEnabled)">Start</button>
+                            <button class="btn btn-sm" @onclick="() => StopJob(job)">Stop</button>
+                            <button class="btn btn-sm" @onclick="() => ToggleJob(job)">
+                                @(job.IsEnabled ? "Disable" : "Enable")
+                            </button>
+                            <button class="btn btn-sm" @onclick="() => ViewSteps(job)">Steps</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Job Steps Dialog -->
+<Modal IsVisible="ShowStepsDialog" Title="@($"Job Steps: {SelectedJob?.Name}")"
+       OnClose="() => ShowStepsDialog = false" Size="Modal.ModalSize.Large">
+    <ChildContent>
+        <table class="data-grid" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Step</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Database</th>
+                    <th>On Success</th>
+                    <th>On Failure</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var step in JobSteps)
+                {
+                    <tr>
+                        <td>@step.StepId</td>
+                        <td>@step.Name</td>
+                        <td>@step.Subsystem</td>
+                        <td>@step.DatabaseName</td>
+                        <td>@step.OnSuccessAction</td>
+                        <td>@step.OnFailAction</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (SelectedStep != null)
+        {
+            <div style="margin-top: 12px;">
+                <div style="font-weight: 600; margin-bottom: 4px;">Step Command:</div>
+                <pre style="background: var(--bg-input); padding: 8px; border-radius: 4px; font-family: var(--font-mono); font-size: var(--font-size-xs); max-height: 200px; overflow: auto;">@SelectedStep.Command</pre>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn" @onclick="() => ShowStepsDialog = false">Close</button>
+    </Footer>
+</Modal>
+
+@code {
+    private List<AgentJobInfo> Jobs = new();
+    private AgentJobInfo? SelectedJob;
+    private List<AgentJobStep> JobSteps = new();
+    private AgentJobStep? SelectedStep;
+    private bool ShowStepsDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadJobs();
+    }
+
+    private async Task LoadJobs()
+    {
+        Jobs = await AgentJobService.GetJobsAsync();
+    }
+
+    private async Task StartJob(AgentJobInfo job)
+    {
+        await AgentJobService.StartJobAsync(job.JobId);
+        await LoadJobs();
+    }
+
+    private async Task StopJob(AgentJobInfo job)
+    {
+        await AgentJobService.StopJobAsync(job.JobId);
+        await LoadJobs();
+    }
+
+    private async Task ToggleJob(AgentJobInfo job)
+    {
+        await AgentJobService.EnableJobAsync(job.JobId, !job.IsEnabled);
+        await LoadJobs();
+    }
+
+    private async Task ViewSteps(AgentJobInfo job)
+    {
+        SelectedJob = job;
+        JobSteps = await AgentJobService.GetJobStepsAsync(job.JobId);
+        SelectedStep = JobSteps.FirstOrDefault();
+        ShowStepsDialog = true;
+    }
+
+    private string GetStatusBadge(string? status) => status switch
+    {
+        "Succeeded" => "badge-success",
+        "Failed" => "badge-error",
+        "Retry" => "badge-warning",
+        "Canceled" => "badge-warning",
+        _ => ""
+    };
+}

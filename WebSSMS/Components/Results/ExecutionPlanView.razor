@@ -1,0 +1,116 @@
+@using WebSSMS.Models
+@using System.Xml.Linq
+
+<div class="execution-plan">
+    @if (string.IsNullOrEmpty(PlanXml))
+    {
+        <div style="color: var(--text-muted); font-size: var(--font-size-sm);">
+            No execution plan available. Enable "Include Actual Execution Plan" before executing.
+        </div>
+    }
+    else if (PlanNodes.Count > 0)
+    {
+        <div style="display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 24px; padding: 16px; overflow: auto;">
+            @foreach (var node in PlanNodes)
+            {
+                <div class="plan-node">
+                    <div class="plan-node-card">
+                        <div class="plan-node-op">@node.PhysicalOp</div>
+                        <div class="plan-node-detail">@node.LogicalOp</div>
+                        @if (node.ObjectName != null)
+                        {
+                            <div class="plan-node-detail" style="color: var(--text-accent);">@node.ObjectName</div>
+                        }
+                        <div class="plan-node-cost">Cost: @node.TotalCostPercentage.ToString("F1")%</div>
+                        <div class="plan-node-cost-bar">
+                            <div class="plan-node-cost-fill" style="width: @(node.TotalCostPercentage)%"></div>
+                        </div>
+                        <div class="plan-node-detail">Est. Rows: @node.EstimateRows.ToString("N0")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div style="padding: 16px;">
+            <div style="margin-bottom: 8px; font-weight: 600;">Raw Execution Plan XML:</div>
+            <pre style="font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); white-space: pre-wrap; max-height: 400px; overflow: auto;">@PlanXml</pre>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? PlanXml { get; set; }
+
+    private List<ExecutionPlanNode> PlanNodes = new();
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(PlanXml))
+        {
+            try
+            {
+                PlanNodes = ParseExecutionPlan(PlanXml);
+            }
+            catch
+            {
+                PlanNodes = new();
+            }
+        }
+    }
+
+    private List<ExecutionPlanNode> ParseExecutionPlan(string xml)
+    {
+        var nodes = new List<ExecutionPlanNode>();
+
+        try
+        {
+            var doc = XDocument.Parse(xml);
+            var ns = doc.Root?.GetDefaultNamespace();
+            if (ns == null) return nodes;
+
+            var relOps = doc.Descendants(ns + "RelOp");
+            double totalCost = 0;
+
+            var allNodes = new List<ExecutionPlanNode>();
+            foreach (var relOp in relOps)
+            {
+                var node = new ExecutionPlanNode
+                {
+                    NodeId = relOp.Attribute("NodeId")?.Value ?? "",
+                    PhysicalOp = relOp.Attribute("PhysicalOp")?.Value ?? "Unknown",
+                    LogicalOp = relOp.Attribute("LogicalOp")?.Value ?? "",
+                    EstimateRows = double.TryParse(relOp.Attribute("EstimateRows")?.Value, out var rows) ? rows : 0,
+                    EstimateCPU = double.TryParse(relOp.Attribute("EstimateCPU")?.Value, out var cpu) ? cpu : 0,
+                    EstimateIO = double.TryParse(relOp.Attribute("EstimateIO")?.Value, out var io) ? io : 0,
+                    SubtreeCost = double.TryParse(relOp.Attribute("EstimatedTotalSubtreeCost")?.Value, out var cost) ? cost : 0,
+                };
+
+                var objectRef = relOp.Descendants(ns + "Object").FirstOrDefault();
+                if (objectRef != null)
+                {
+                    var table = objectRef.Attribute("Table")?.Value;
+                    var index = objectRef.Attribute("Index")?.Value;
+                    node.ObjectName = table ?? index;
+                }
+
+                totalCost += node.EstimateCPU + node.EstimateIO;
+                allNodes.Add(node);
+            }
+
+            foreach (var node in allNodes)
+            {
+                node.TotalCostPercentage = totalCost > 0
+                    ? ((node.EstimateCPU + node.EstimateIO) / totalCost) * 100
+                    : 0;
+            }
+
+            return allNodes;
+        }
+        catch
+        {
+            return nodes;
+        }
+    }
+}

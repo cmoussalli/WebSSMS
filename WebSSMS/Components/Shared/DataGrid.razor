@@ -1,0 +1,154 @@
+@using WebSSMS.Models
+
+<div class="data-grid-container">
+    @if (ShowInfo)
+    {
+        <div class="data-grid-info">
+            <span>@Columns.Count column(s)</span>
+            <span>@Rows.Count row(s)</span>
+        </div>
+    }
+
+    <div class="data-grid-wrapper">
+        <table class="data-grid">
+            <thead>
+                <tr>
+                    @if (ShowRowNumbers)
+                    {
+                        <th class="row-number">#</th>
+                    }
+                    @foreach (var col in Columns)
+                    {
+                        <th class="@(Sortable ? "sortable" : "")"
+                            @onclick="() => HandleSort(col.Name)"
+                            style="@(GetColumnWidth(col))">
+                            @col.Name
+                            @if (SortColumn == col.Name)
+                            {
+                                <span class="sort-indicator">@(SortAscending ? "\u25B2" : "\u25BC")</span>
+                            }
+                        </th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var displayRows = GetDisplayRows();
+                    int rowIndex = 0;
+                }
+                @foreach (var row in displayRows)
+                {
+                    var currentIndex = rowIndex;
+                    <tr class="@(currentIndex == SelectedRowIndex ? "selected" : "")"
+                        @onclick="() => HandleRowClick(currentIndex)">
+                        @if (ShowRowNumbers)
+                        {
+                            <td class="row-number">@(currentIndex + 1)</td>
+                        }
+                        @for (int i = 0; i < Columns.Count && i < row.Length; i++)
+                        {
+                            var value = row[i];
+                            @if (value == null)
+                            {
+                                <td class="cell-null">NULL</td>
+                            }
+                            else
+                            {
+                                <td title="@FormatValue(value)">@FormatValue(value)</td>
+                            }
+                        }
+                    </tr>
+                    rowIndex++;
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (ShowFooter)
+    {
+        <div class="data-grid-footer">
+            <div class="data-grid-footer-info">
+                <span>Rows: @Rows.Count</span>
+                @if (SelectedRowIndex >= 0)
+                {
+                    <span>Selected: Row @(SelectedRowIndex + 1)</span>
+                }
+            </div>
+            @if (Rows.Count > MaxDisplayRows)
+            {
+                <span>Showing first @MaxDisplayRows of @Rows.Count rows</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<ColumnInfo> Columns { get; set; } = new();
+    [Parameter] public List<object?[]> Rows { get; set; } = new();
+    [Parameter] public bool ShowRowNumbers { get; set; } = true;
+    [Parameter] public bool ShowInfo { get; set; }
+    [Parameter] public bool ShowFooter { get; set; } = true;
+    [Parameter] public bool Sortable { get; set; } = true;
+    [Parameter] public int MaxDisplayRows { get; set; } = 10000;
+    [Parameter] public EventCallback<int> OnRowSelected { get; set; }
+
+    private string? SortColumn;
+    private bool SortAscending = true;
+    private int SelectedRowIndex = -1;
+
+    private void HandleSort(string column)
+    {
+        if (!Sortable) return;
+
+        if (SortColumn == column)
+            SortAscending = !SortAscending;
+        else
+        {
+            SortColumn = column;
+            SortAscending = true;
+        }
+    }
+
+    private async Task HandleRowClick(int index)
+    {
+        SelectedRowIndex = index;
+        await OnRowSelected.InvokeAsync(index);
+    }
+
+    private List<object?[]> GetDisplayRows()
+    {
+        var rows = Rows.AsEnumerable();
+
+        if (SortColumn != null)
+        {
+            var colIndex = Columns.FindIndex(c => c.Name == SortColumn);
+            if (colIndex >= 0)
+            {
+                rows = SortAscending
+                    ? rows.OrderBy(r => r.Length > colIndex ? r[colIndex]?.ToString() : null)
+                    : rows.OrderByDescending(r => r.Length > colIndex ? r[colIndex]?.ToString() : null);
+            }
+        }
+
+        return rows.Take(MaxDisplayRows).ToList();
+    }
+
+    private string FormatValue(object? value)
+    {
+        if (value == null) return "NULL";
+        if (value is DateTime dt) return dt.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        if (value is byte[] bytes) return $"0x{BitConverter.ToString(bytes).Replace("-", "").Substring(0, Math.Min(40, bytes.Length * 2))}...";
+        if (value is bool b) return b ? "True" : "False";
+        return value.ToString() ?? "";
+    }
+
+    private string GetColumnWidth(ColumnInfo col)
+    {
+        var type = col.DataType.ToLower();
+        if (type.Contains("int") || type == "bit" || type == "tinyint") return "min-width: 80px";
+        if (type.Contains("date")) return "min-width: 160px";
+        if (type == "uniqueidentifier") return "min-width: 280px";
+        if (type.Contains("char") || type.Contains("text")) return "min-width: 120px; max-width: 400px";
+        return "min-width: 100px";
+    }
+}

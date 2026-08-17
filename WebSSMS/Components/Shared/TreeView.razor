@@ -1,0 +1,49 @@
+@using WebSSMS.Models
+
+<div class="tree-view" @oncontextmenu="HandleContextMenu" @oncontextmenu:preventDefault>
+    @foreach (var node in Nodes)
+    {
+        <TreeViewNode Node="node"
+                      Level="0"
+                      SelectedNode="SelectedNode"
+                      OnNodeSelected="HandleNodeSelected"
+                      OnNodeExpanded="HandleNodeExpanded"
+                      OnNodeDoubleClicked="HandleNodeDoubleClicked"
+                      OnNodeContextMenu="HandleNodeContextMenu" />
+    }
+</div>
+
+@code {
+    [Parameter] public List<DatabaseObjectNode> Nodes { get; set; } = new();
+    [Parameter] public DatabaseObjectNode? SelectedNode { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeSelected { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeExpanded { get; set; }
+    [Parameter] public EventCallback<DatabaseObjectNode> OnNodeDoubleClicked { get; set; }
+    [Parameter] public EventCallback<(DatabaseObjectNode Node, double X, double Y)> OnNodeContextMenu { get; set; }
+
+    private async Task HandleNodeSelected(DatabaseObjectNode node)
+    {
+        SelectedNode = node;
+        await OnNodeSelected.InvokeAsync(node);
+    }
+
+    private async Task HandleNodeExpanded(DatabaseObjectNode node)
+    {
+        await OnNodeExpanded.InvokeAsync(node);
+    }
+
+    private async Task HandleNodeDoubleClicked(DatabaseObjectNode node)
+    {
+        await OnNodeDoubleClicked.InvokeAsync(node);
+    }
+
+    private async Task HandleNodeContextMenu((DatabaseObjectNode Node, double X, double Y) args)
+    {
+        await OnNodeContextMenu.InvokeAsync(args);
+    }
+
+    private void HandleContextMenu(MouseEventArgs e)
+    {
+        // Handled at node level
+    }
+}

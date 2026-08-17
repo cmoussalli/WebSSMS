@@ -1,0 +1,53 @@
+<div class="statusbar">
+    @if (!string.IsNullOrEmpty(ConnectionStatus))
+    {
+        <div class="statusbar-item">
+            <svg width="10" height="10" viewBox="0 0 10 10">
+                <circle cx="5" cy="5" r="4" fill="@(IsConnected ? "#4ec9b0" : "#d16969")" />
+            </svg>
+            <span>@ConnectionStatus</span>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(ServerName))
+    {
+        <div class="statusbar-item">@ServerName</div>
+    }
+
+    @if (!string.IsNullOrEmpty(DatabaseName))
+    {
+        <div class="statusbar-item">@DatabaseName</div>
+    }
+
+    <div class="statusbar-spacer"></div>
+
+    @if (!string.IsNullOrEmpty(ExecutionTime))
+    {
+        <div class="statusbar-item">@ExecutionTime</div>
+    }
+
+    @if (RowCount.HasValue)
+    {
+        <div class="statusbar-item">@RowCount.Value rows</div>
+    }
+
+    @if (!string.IsNullOrEmpty(StatusMessage))
+    {
+        <div class="statusbar-item @StatusMessageClass">@StatusMessage</div>
+    }
+
+    <div class="statusbar-item">Ln @Line, Col @Column</div>
+</div>
+
+@code {
+    [Parameter] public string? ConnectionStatus { get; set; }
+    [Parameter] public bool IsConnected { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter] public string? DatabaseName { get; set; }
+    [Parameter] public string? ExecutionTime { get; set; }
+    [Parameter] public int? RowCount { get; set; }
+    [Parameter] public string? StatusMessage { get; set; }
+    [Parameter] public string? StatusMessageClass { get; set; }
+    [Parameter] public int Line { get; set; } = 1;
+    [Parameter] public int Column { get; set; } = 1;
+}

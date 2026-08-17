@@ -1,0 +1,137 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject MonitoringService MonitoringService
+@inject SchemaDiscoveryService SchemaService
+
+<div style="padding: 16px; overflow: auto; height: 100%;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <!-- CPU Card -->
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 16px;">
+            <div style="font-size: var(--font-size-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">SQL CPU Usage</div>
+            <div style="font-size: 32px; font-weight: 600; color: var(--text-accent); margin: 8px 0;">
+                @(Stats.TryGetValue("SqlCpuPercent", out var cpu) ? cpu : 0)%
+            </div>
+            <div style="height: 4px; background: var(--bg-input); border-radius: 2px; overflow: hidden;">
+                <div style="height: 100%; width: @(Stats.TryGetValue("SqlCpuPercent", out var cpuVal) ? cpuVal : 0)%; background: var(--text-accent); border-radius: 2px;"></div>
+            </div>
+        </div>
+
+        <!-- Memory Card -->
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 16px;">
+            <div style="font-size: var(--font-size-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Memory</div>
+            <div style="font-size: 32px; font-weight: 600; color: var(--text-success); margin: 8px 0;">
+                @{
+                    var total = Stats.TryGetValue("TotalMemoryMB", out var t) ? Convert.ToInt64(t) : 0;
+                    var avail = Stats.TryGetValue("AvailableMemoryMB", out var a) ? Convert.ToInt64(a) : 0;
+                    var used = total - avail;
+                    var usedPct = total > 0 ? (used * 100 / total) : 0;
+                }
+                @usedPct%
+            </div>
+            <div style="font-size: var(--font-size-xs); color: var(--text-secondary);">
+                @used.ToString("N0") / @total.ToString("N0") MB
+            </div>
+        </div>
+
+        <!-- Connections Card -->
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 16px;">
+            <div style="font-size: var(--font-size-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Active Connections</div>
+            <div style="font-size: 32px; font-weight: 600; color: var(--text-warning); margin: 8px 0;">
+                @(Stats.TryGetValue("ActiveConnections", out var conn) ? conn : 0)
+            </div>
+        </div>
+
+        <!-- Database Size Card -->
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 16px;">
+            <div style="font-size: var(--font-size-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Total Database Size</div>
+            <div style="font-size: 32px; font-weight: 600; color: var(--icon-database); margin: 8px 0;">
+                @{
+                    var sizeMb = Stats.TryGetValue("TotalDatabaseSizeMB", out var s) ? Convert.ToInt64(s) : 0;
+                    var sizeDisplay = sizeMb > 1024 ? $"{(sizeMb / 1024.0):F1} GB" : $"{sizeMb} MB";
+                }
+                @sizeDisplay
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Info -->
+    @if (ServerInfo != null)
+    {
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+            <div style="font-weight: 600; margin-bottom: 12px;">Server Information</div>
+            <div class="property-grid">
+                <div class="property-grid-label">Server Name</div>
+                <div class="property-grid-value">@ServerInfo.ServerName</div>
+                <div class="property-grid-label">Version</div>
+                <div class="property-grid-value">@ServerInfo.ProductVersion (@ServerInfo.ProductLevel)</div>
+                <div class="property-grid-label">Edition</div>
+                <div class="property-grid-value">@ServerInfo.Edition</div>
+                <div class="property-grid-label">Collation</div>
+                <div class="property-grid-value">@ServerInfo.Collation</div>
+                <div class="property-grid-label">Clustered</div>
+                <div class="property-grid-value">@(ServerInfo.IsClustered ? "Yes" : "No")</div>
+                <div class="property-grid-label">Always On</div>
+                <div class="property-grid-value">@(ServerInfo.IsHadrEnabled ? "Enabled" : "Disabled")</div>
+            </div>
+        </div>
+    }
+
+    <!-- Databases -->
+    @if (Databases.Any())
+    {
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+            <div style="font-weight: 600; margin-bottom: 12px;">Databases (@Databases.Count)</div>
+            <table class="data-grid" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Size</th>
+                        <th>State</th>
+                        <th>Recovery Model</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var db in Databases)
+                    {
+                        <tr>
+                            <td>@db.Name</td>
+                            <td style="position: relative; min-width: 120px;">
+                                @{
+                                    var totalSize = Databases.Sum(d => d.SizeMB);
+                                    var pct = totalSize > 0 ? (db.SizeMB / totalSize * 100) : 0;
+                                }
+                                <div style="position: absolute; top: 0; left: 0; bottom: 0; width: @($"{pct:F1}")%; background: var(--text-accent); opacity: 0.15;"></div>
+                                <span style="position: relative;">@(db.SizeMB >= 1024 ? $"{(db.SizeMB / 1024.0):F1} GB" : $"{db.SizeMB:F1} MB")</span>
+                            </td>
+                            <td>
+                                <span class="badge @(db.State == "ONLINE" ? "badge-success" : "badge-error")">@db.State</span>
+                            </td>
+                            <td>@db.RecoveryModel</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <button class="btn" @onclick="LoadData">Refresh Dashboard</button>
+</div>
+
+@code {
+    private Dictionary<string, object> Stats = new();
+    private ServerInfo? ServerInfo;
+    private List<DatabaseInfo> Databases = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Stats = await MonitoringService.GetServerStatsAsync();
+        ServerInfo = await SchemaService.GetServerInfoAsync();
+        Databases = await SchemaService.GetDatabaseInfosAsync();
+        StateHasChanged();
+    }
+}

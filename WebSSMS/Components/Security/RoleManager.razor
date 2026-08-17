@@ -1,0 +1,70 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SecurityService SecurityService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <div class="tab-header tab-header-sm" style="border: none; background: transparent;">
+            <div class="tab-item @(ShowServerRoles ? "active" : "")" @onclick="() => { ShowServerRoles = true; LoadRoles(); }">
+                Server Roles
+            </div>
+            <div class="tab-item @(!ShowServerRoles ? "active" : "")" @onclick="() => { ShowServerRoles = false; LoadRoles(); }">
+                Database Roles
+            </div>
+        </div>
+        @if (!ShowServerRoles)
+        {
+            <div class="toolbar-separator"></div>
+            <DropdownButton Items="Databases" Value="@SelectedDatabase"
+                            OnSelectionChanged="db => { SelectedDatabase = db; LoadRoles(); }" />
+        }
+    </div>
+
+    <div style="flex: 1; overflow: auto;">
+        <table class="data-grid" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Role Name</th>
+                    <th>Owner</th>
+                    <th>Type</th>
+                    <th>Members</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var role in Roles)
+                {
+                    <tr>
+                        <td>@role.Name</td>
+                        <td>@role.OwnerName</td>
+                        <td>
+                            <span class="badge @(role.IsFixedRole ? "badge-info" : "")">
+                                @(role.IsFixedRole ? "Fixed" : "Custom")
+                            </span>
+                        </td>
+                        <td>@string.Join(", ", role.Members)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    private List<RoleDefinition> Roles = new();
+    private bool ShowServerRoles = true;
+    private string SelectedDatabase = "master";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRoles();
+    }
+
+    private async Task LoadRoles()
+    {
+        Roles = ShowServerRoles
+            ? await SecurityService.GetServerRolesAsync()
+            : await SecurityService.GetDatabaseRolesAsync(SelectedDatabase);
+    }
+}

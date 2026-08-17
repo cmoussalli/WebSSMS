@@ -1,0 +1,124 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SecurityService SecurityService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <button class="toolbar-btn toolbar-btn-text" @onclick="LoadLogins">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M13 3a7 7 0 1 0 1 4h-2a5 5 0 1 1-1-3l-2 2h5V1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="ShowCreateLogin">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" fill="none"/>
+            </svg>
+            <span>New Login</span>
+        </button>
+    </div>
+
+    <div style="flex: 1; overflow: auto;">
+        <table class="data-grid" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Login Name</th>
+                    <th>Default Database</th>
+                    <th>Language</th>
+                    <th>Status</th>
+                    <th>Server Roles</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var login in Logins)
+                {
+                    <tr class="@(SelectedLogin?.Name == login.Name ? "selected" : "")"
+                        @onclick="() => SelectedLogin = login">
+                        <td>@login.Name</td>
+                        <td>@login.DefaultDatabase</td>
+                        <td>@login.DefaultLanguage</td>
+                        <td>
+                            <span class="badge @(login.IsDisabled ? "badge-error" : "badge-success")">
+                                @(login.IsDisabled ? "Disabled" : "Enabled")
+                            </span>
+                        </td>
+                        <td>@string.Join(", ", login.ServerRoles)</td>
+                        <td>@login.CreateDate?.ToString("yyyy-MM-dd")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Create Login Dialog -->
+<Modal IsVisible="ShowCreateDialog" Title="New Login" OnClose="() => ShowCreateDialog = false" Size="Modal.ModalSize.Medium">
+    <ChildContent>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Login name:</label>
+            <input class="form-input" @bind="NewLogin.Name" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Password:</label>
+            <input class="form-input" type="password" @bind="NewLogin.Password" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Default database:</label>
+            <input class="form-input" @bind="NewLogin.DefaultDatabase" />
+        </div>
+        <div class="form-group">
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="NewLogin.EnforcePasswordPolicy" />
+                Enforce password policy
+            </label>
+        </div>
+        @if (CreateError != null)
+        {
+            <div class="form-error">@CreateError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-primary" @onclick="CreateLogin">Create</button>
+        <button class="btn" @onclick="() => ShowCreateDialog = false">Cancel</button>
+    </Footer>
+</Modal>
+
+@code {
+    private List<LoginDefinition> Logins = new();
+    private LoginDefinition? SelectedLogin;
+    private bool ShowCreateDialog;
+    private LoginDefinition NewLogin = new();
+    private string? CreateError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogins();
+    }
+
+    private async Task LoadLogins()
+    {
+        Logins = await SecurityService.GetLoginsAsync();
+    }
+
+    private void ShowCreateLogin()
+    {
+        NewLogin = new LoginDefinition { DefaultDatabase = "master" };
+        CreateError = null;
+        ShowCreateDialog = true;
+    }
+
+    private async Task CreateLogin()
+    {
+        var (success, error) = await SecurityService.CreateLoginAsync(NewLogin);
+        if (success)
+        {
+            ShowCreateDialog = false;
+            await LoadLogins();
+        }
+        else
+        {
+            CreateError = error;
+        }
+    }
+}

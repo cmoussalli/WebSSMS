@@ -1,0 +1,106 @@
+:root {
+    /* SSMS Dark Theme Colors */
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #252526;
+    --bg-tertiary: #2d2d30;
+    --bg-input: #3c3c3c;
+    --bg-hover: #2a2d2e;
+    --bg-selected: #094771;
+    --bg-selected-unfocused: #37373d;
+    --bg-toolbar: #333333;
+    --bg-statusbar: #007acc;
+    --bg-menubar: #3c3c3c;
+    --bg-panel: #1e1e1e;
+    --bg-tab-active: #1e1e1e;
+    --bg-tab-inactive: #2d2d30;
+    --bg-tab-hover: #2d2d30;
+    --bg-modal: #252526;
+    --bg-modal-overlay: rgba(0, 0, 0, 0.6);
+    --bg-grid-header: #333333;
+    --bg-grid-row: #1e1e1e;
+    --bg-grid-row-alt: #252526;
+    --bg-grid-row-hover: #2a2d2e;
+    --bg-grid-row-selected: #094771;
+    --bg-context-menu: #252526;
+    --bg-scrollbar: #1e1e1e;
+    --bg-scrollbar-thumb: #424242;
+    --bg-scrollbar-thumb-hover: #4f4f4f;
+    --bg-toast-info: #007acc;
+    --bg-toast-success: #2d8b2d;
+    --bg-toast-error: #c72e2e;
+    --bg-toast-warning: #c27d2e;
+    --bg-splitter: #333333;
+
+    /* Text Colors */
+    --text-primary: #cccccc;
+    --text-secondary: #969696;
+    --text-muted: #6b6b6b;
+    --text-accent: #4fc1ff;
+    --text-link: #3794ff;
+    --text-error: #f48771;
+    --text-warning: #cca700;
+    --text-success: #89d185;
+    --text-white: #ffffff;
+    --text-on-accent: #ffffff;
+
+    /* Border Colors */
+    --border-primary: #3c3c3c;
+    --border-secondary: #474747;
+    --border-focus: #007acc;
+    --border-error: #be1100;
+    --border-input: #5a5a5a;
+
+    /* Icon Colors */
+    --icon-database: #c586c0;
+    --icon-table: #4ec9b0;
+    --icon-view: #569cd6;
+    --icon-procedure: #dcdcaa;
+    --icon-function: #ce9178;
+    --icon-column: #9cdcfe;
+    --icon-key: #d4a017;
+    --icon-index: #608b4e;
+    --icon-constraint: #d16969;
+    --icon-trigger: #d7ba7d;
+    --icon-user: #4fc1ff;
+    --icon-folder: #dcb67a;
+    --icon-server: #569cd6;
+    --icon-security: #d16969;
+    --icon-job: #4ec9b0;
+    --icon-schema: #c586c0;
+    --icon-role: #ce9178;
+
+    /* Sizing */
+    --sidebar-width: 300px;
+    --toolbar-height: 36px;
+    --menubar-height: 30px;
+    --statusbar-height: 24px;
+    --tab-height: 35px;
+    --splitter-size: 4px;
+    --scrollbar-size: 10px;
+    --tree-indent: 20px;
+
+    /* Typography */
+    --font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-base: 13px;
+    --font-size-md: 14px;
+    --font-size-lg: 16px;
+
+    /* Transitions */
+    --transition-fast: 0.1s ease;
+    --transition-normal: 0.2s ease;
+
+    /* Shadows */
+    --shadow-dropdown: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-modal: 0 4px 24px rgba(0, 0, 0, 0.5);
+    --shadow-toast: 0 2px 12px rgba(0, 0, 0, 0.3);
+
+    /* Z-Index Scale */
+    --z-dropdown: 100;
+    --z-modal-overlay: 200;
+    --z-modal: 300;
+    --z-toast: 400;
+    --z-context-menu: 500;
+}

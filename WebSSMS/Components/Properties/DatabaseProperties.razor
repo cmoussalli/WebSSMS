@@ -1,0 +1,120 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SchemaDiscoveryService SchemaService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <DropdownButton Items="Databases" Value="@SelectedDatabase"
+                        OnSelectionChanged="ChangeDatabase" Style="min-width: 150px;" />
+        <div class="toolbar-separator"></div>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="LoadProperties">
+            <span>Refresh</span>
+        </button>
+    </div>
+
+    <div style="flex: 1; overflow: auto; padding: 16px;">
+        @if (DbInfo != null)
+        {
+            <div class="tab-control">
+                <div class="tab-header tab-header-sm">
+                    <div class="tab-item @(Tab == "general" ? "active" : "")" @onclick='() => Tab = "general"'>General</div>
+                    <div class="tab-item @(Tab == "files" ? "active" : "")" @onclick='() => Tab = "files"'>Files</div>
+                    <div class="tab-item @(Tab == "options" ? "active" : "")" @onclick='() => Tab = "options"'>Options</div>
+                </div>
+                <div class="tab-content" style="padding: 12px;">
+                    @if (Tab == "general")
+                    {
+                        <div class="property-grid" style="max-width: 500px;">
+                            <div class="property-grid-category">Database</div>
+                            <div class="property-grid-label">Name</div>
+                            <div class="property-grid-value">@DbInfo.Name</div>
+                            <div class="property-grid-label">Status</div>
+                            <div class="property-grid-value">
+                                <span class="badge @(DbInfo.State == "ONLINE" ? "badge-success" : "badge-error")">@DbInfo.State</span>
+                            </div>
+                            <div class="property-grid-label">Owner</div>
+                            <div class="property-grid-value">@DbInfo.Owner</div>
+                            <div class="property-grid-label">Created</div>
+                            <div class="property-grid-value">@DbInfo.CreateDate.ToString("yyyy-MM-dd HH:mm:ss")</div>
+                            <div class="property-grid-label">Size (MB)</div>
+                            <div class="property-grid-value">@DbInfo.SizeMB.ToString("F2")</div>
+                            <div class="property-grid-label">Collation</div>
+                            <div class="property-grid-value">@DbInfo.Collation</div>
+                        </div>
+                    }
+                    else if (Tab == "files")
+                    {
+                        <table class="data-grid" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Logical Name</th>
+                                    <th>Type</th>
+                                    <th>File Group</th>
+                                    <th>Size (MB)</th>
+                                    <th>Growth</th>
+                                    <th>Physical Name</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var file in DbInfo.Files)
+                                {
+                                    <tr>
+                                        <td>@file.Name</td>
+                                        <td>@file.Type</td>
+                                        <td>@file.FileGroup</td>
+                                        <td>@file.SizeMB.ToString("F2")</td>
+                                        <td>@file.Growth</td>
+                                        <td>@file.PhysicalName</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else if (Tab == "options")
+                    {
+                        <div class="property-grid" style="max-width: 500px;">
+                            <div class="property-grid-category">Recovery</div>
+                            <div class="property-grid-label">Recovery Model</div>
+                            <div class="property-grid-value">@DbInfo.RecoveryModel</div>
+                            <div class="property-grid-label">Compatibility Level</div>
+                            <div class="property-grid-value">@DbInfo.CompatibilityLevel</div>
+
+                            <div class="property-grid-category">State</div>
+                            <div class="property-grid-label">Read-Only</div>
+                            <div class="property-grid-value">@(DbInfo.IsReadOnly ? "Yes" : "No")</div>
+                            <div class="property-grid-label">Auto Shrink</div>
+                            <div class="property-grid-value">@(DbInfo.IsAutoShrink ? "Yes" : "No")</div>
+                            <div class="property-grid-label">Auto Close</div>
+                            <div class="property-grid-value">@(DbInfo.IsAutoClose ? "Yes" : "No")</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    private string SelectedDatabase = "master";
+    private DatabaseInfo? DbInfo;
+    private string Tab = "general";
+
+    private async Task ChangeDatabase(string db)
+    {
+        SelectedDatabase = db;
+        await LoadProperties();
+    }
+
+    private async Task LoadProperties()
+    {
+        var infos = await SchemaService.GetDatabaseInfosAsync();
+        DbInfo = infos.FirstOrDefault(d => d.Name == SelectedDatabase);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProperties();
+    }
+}

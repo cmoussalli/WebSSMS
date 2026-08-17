@@ -1,0 +1,152 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SchemaDiscoveryService SchemaService
+@inject IJSRuntime JS
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <DropdownButton Items="Databases" Value="@SelectedDatabase"
+                            OnSelectionChanged="ChangeDatabase" Style="min-width: 150px;" />
+        </div>
+        <div class="toolbar-separator"></div>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="AddTable">
+            <span>Add Table</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="AutoArrange">
+            <span>Auto Arrange</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="ClearDiagram">
+            <span>Clear</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="LoadAllTables">
+            <span>Load All Tables</span>
+        </button>
+    </div>
+
+    <div id="@DiagramId" class="diagram-canvas" style="flex: 1;">
+        <svg id="diagram-svg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="var(--text-secondary)" />
+                </marker>
+            </defs>
+        </svg>
+    </div>
+</div>
+
+<!-- Add Table Dialog -->
+<Modal IsVisible="ShowAddTableDialog" Title="Add Table to Diagram"
+       OnClose="() => ShowAddTableDialog = false" Size="Modal.ModalSize.Medium">
+    <ChildContent>
+        <div style="max-height: 400px; overflow: auto;">
+            @foreach (var table in AvailableTables)
+            {
+                <div style="padding: 4px 8px; cursor: pointer; font-size: var(--font-size-sm);"
+                     class="@(SelectedTableToAdd == table ? "selected" : "")"
+                     @onclick="() => SelectedTableToAdd = table"
+                     @ondblclick="() => AddSelectedTable(table)">
+                    @table.DisplayName
+                </div>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-primary" @onclick="() => { if (SelectedTableToAdd != null) AddSelectedTable(SelectedTableToAdd); }"
+                disabled="@(SelectedTableToAdd == null)">Add</button>
+        <button class="btn" @onclick="() => ShowAddTableDialog = false">Cancel</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    private string DiagramId = $"diagram-{Guid.NewGuid():N}";
+    private string SelectedDatabase = "master";
+    private bool ShowAddTableDialog;
+    private List<DatabaseObjectNode> AvailableTables = new();
+    private DatabaseObjectNode? SelectedTableToAdd;
+    private int _nextX = 20;
+    private int _nextY = 20;
+    private bool _initialized;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialized)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("WebSSMS.Diagram.init", DiagramId, DotNetObjectReference.Create(this));
+                await JS.InvokeVoidAsync("WebSSMS.Diagram.clear");
+                _initialized = true;
+            }
+            catch { }
+        }
+    }
+
+    private async Task ChangeDatabase(string db)
+    {
+        SelectedDatabase = db;
+        await ClearDiagram();
+    }
+
+    private async Task AddTable()
+    {
+        AvailableTables = await SchemaService.GetTablesAsync(SelectedDatabase);
+        SelectedTableToAdd = null;
+        ShowAddTableDialog = true;
+    }
+
+    private async Task AddSelectedTable(DatabaseObjectNode table)
+    {
+        ShowAddTableDialog = false;
+
+        var columns = await SchemaService.GetColumnsAsync(SelectedDatabase, table.SchemaName!, table.Name);
+        var jsColumns = columns.Select(c => new { name = c.Name, dataType = c.DataType ?? "", isPrimaryKey = c.IsIdentity }).ToArray();
+
+        try
+        {
+            await JS.InvokeVoidAsync("WebSSMS.Diagram.addTable", table.Id, table.DisplayName, jsColumns, _nextX, _nextY);
+        }
+        catch { }
+
+        _nextX += 220;
+        if (_nextX > 800)
+        {
+            _nextX = 20;
+            _nextY += 250;
+        }
+    }
+
+    private async Task LoadAllTables()
+    {
+        _nextX = 20;
+        _nextY = 20;
+        await ClearDiagram();
+
+        var tables = await SchemaService.GetTablesAsync(SelectedDatabase);
+        foreach (var table in tables)
+        {
+            await AddSelectedTable(table);
+        }
+    }
+
+    private void AutoArrange()
+    {
+        // Simple grid arrangement
+        _nextX = 20;
+        _nextY = 20;
+    }
+
+    private async Task ClearDiagram()
+    {
+        _nextX = 20;
+        _nextY = 20;
+
+        try
+        {
+            await JS.InvokeVoidAsync("WebSSMS.Diagram.clear");
+        }
+        catch { }
+    }
+}

@@ -1,0 +1,405 @@
+@page "/"
+@rendermode InteractiveServer
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject ConnectionManager ConnectionManager
+@inject SchemaDiscoveryService SchemaService
+@inject TemplateService TemplateService
+@inject IJSRuntime JS
+
+<PageTitle>WebSSMS - SQL Server Management Studio</PageTitle>
+
+<div class="ide-shell">
+    <!-- Menu Bar -->
+    <div class="menubar">
+        <span class="menubar-item" @onclick="() => ShowConnectionDialog = true">Connect</span>
+        <span class="menubar-item" @onclick="NewQuery">New Query</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("dashboard")'>Dashboard</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("activity")'>Activity Monitor</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("templates")'>Templates</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("security")'>Security</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("backup")'>Backup</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("restore")'>Restore</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("import")'>Import</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("export")'>Export</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("diagram")'>Diagram</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("jobs")'>Jobs</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("dbprops")'>DB Properties</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("serverprops")'>Server Properties</span>
+        <span class="menubar-title">WebSSMS - Data Studio for SQL Server</span>
+        <span class="menubar-item" @onclick="() => ShowAboutDialog = true">About</span>
+    </div>
+
+    <!-- Main Toolbar -->
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <button class="toolbar-btn toolbar-btn-text" @onclick="() => ShowConnectionDialog = true"
+                    title="Connect to Server (Ctrl+Shift+C)">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="var(--text-accent)">
+                    <path d="M2 3h4l2 2h6v8H2z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M7 7v4M5 9h4" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+                <span>Connect</span>
+            </button>
+
+            @if (ConnectionManager.IsConnected)
+            {
+                <button class="toolbar-btn toolbar-btn-text" @onclick="Disconnect"
+                        title="Disconnect">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="var(--text-error)">
+                        <path d="M2 3h4l2 2h6v8H2z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                        <path d="M5 9h6" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <span>Disconnect</span>
+                </button>
+            }
+        </div>
+
+        <div class="toolbar-separator"></div>
+
+        <div class="toolbar-group">
+            <button class="toolbar-btn toolbar-btn-text" @onclick="NewQuery"
+                    disabled="@(!ConnectionManager.IsConnected)" title="New Query (Ctrl+N)">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <rect x="2" y="1" width="12" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M5 4h6M5 7h6M5 10h4" stroke="currentColor" stroke-width="1"/>
+                </svg>
+                <span>New Query</span>
+            </button>
+        </div>
+
+        <div class="toolbar-separator"></div>
+
+        <div class="toolbar-group">
+            <button class="toolbar-btn" @onclick='() => ShowPanel("dashboard")' title="Server Dashboard"
+                    disabled="@(!ConnectionManager.IsConnected)">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <rect x="1" y="8" width="3" height="6" rx="0.5"/>
+                    <rect x="5" y="4" width="3" height="10" rx="0.5"/>
+                    <rect x="9" y="6" width="3" height="8" rx="0.5"/>
+                    <rect x="13" y="2" width="2" height="12" rx="0.5"/>
+                </svg>
+            </button>
+            <button class="toolbar-btn" @onclick='() => ShowPanel("activity")' title="Activity Monitor"
+                    disabled="@(!ConnectionManager.IsConnected)">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M8 4v4l3 2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <!-- Object Explorer Sidebar -->
+        <ObjectExplorer @ref="ObjectExplorerRef"
+                        OnConnectRequested="() => ShowConnectionDialog = true"
+                        OnDisconnectRequested="Disconnect"
+                        OnNewQuery="OpenNewQueryForDatabase"
+                        OnScriptGenerated="OpenScript"
+                        OnNodeAction="HandleNodeAction" />
+
+        <!-- Vertical Splitter -->
+        <div class="splitter" id="main-splitter"></div>
+
+        <!-- Editor / Feature Area -->
+        <div class="editor-area">
+            @if (ActivePanel == "query")
+            {
+                <QueryTabs @ref="QueryTabsRef" />
+            }
+            else if (ActivePanel == "dashboard")
+            {
+                <ServerDashboard />
+            }
+            else if (ActivePanel == "activity")
+            {
+                <ActivityMonitor />
+            }
+            else if (ActivePanel == "security")
+            {
+                <div class="tab-control" style="height: 100%;">
+                    <div class="tab-header tab-header-sm">
+                        <div class="tab-item @(SecurityTab == "logins" ? "active" : "")" @onclick='() => SecurityTab = "logins"'>Logins</div>
+                        <div class="tab-item @(SecurityTab == "users" ? "active" : "")" @onclick='() => SecurityTab = "users"'>Users</div>
+                        <div class="tab-item @(SecurityTab == "roles" ? "active" : "")" @onclick='() => SecurityTab = "roles"'>Roles</div>
+                        <div class="tab-item @(SecurityTab == "permissions" ? "active" : "")" @onclick='() => SecurityTab = "permissions"'>Permissions</div>
+                    </div>
+                    <div class="tab-content">
+                        @if (SecurityTab == "logins") { <LoginManager /> }
+                        else if (SecurityTab == "users") { <UserManager Databases="DatabaseList" /> }
+                        else if (SecurityTab == "roles") { <RoleManager Databases="DatabaseList" /> }
+                        else if (SecurityTab == "permissions") { <PermissionsEditor Databases="DatabaseList" /> }
+                    </div>
+                </div>
+            }
+            else if (ActivePanel == "jobs")
+            {
+                <JobList />
+            }
+            else if (ActivePanel == "diagram")
+            {
+                <DiagramEditor Databases="DatabaseList" />
+            }
+            else if (ActivePanel == "serverprops")
+            {
+                <ServerProperties />
+            }
+            else if (ActivePanel == "dbprops")
+            {
+                <DatabaseProperties Databases="DatabaseList" />
+            }
+            else if (ActivePanel == "tabledesigner")
+            {
+                <TableDesigner Table="CurrentTableDefinition"
+                               OnScriptGenerated="OpenScript" />
+            }
+            else if (ActivePanel == "templates")
+            {
+                <div style="display: flex; height: 100%; overflow: hidden;">
+                    <div style="width: 250px; border-right: 1px solid var(--border-primary); overflow: auto;">
+                        <div class="sidebar-header"><span>Templates</span></div>
+                        @foreach (var category in TemplateService.GetCategories())
+                        {
+                            <div style="padding: 4px 12px; font-weight: 600; font-size: var(--font-size-xs); color: var(--text-secondary); background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary);">
+                                @category
+                            </div>
+                            @foreach (var template in TemplateService.GetTemplatesByCategory(category))
+                            {
+                                <div style="padding: 4px 16px; font-size: var(--font-size-sm); cursor: pointer;"
+                                     class="tree-node-row"
+                                     @onclick="() => OpenScript(template.Content)">
+                                    @template.Name
+                                </div>
+                            }
+                        }
+                    </div>
+                    <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: var(--font-size-sm);">
+                        Click a template to open it in a new query tab
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- Welcome / Empty State -->
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">
+                    <div style="text-align: center; max-width: 500px;">
+                        <div style="font-size: 48px; margin-bottom: 16px; color: var(--text-accent);">
+                            <svg viewBox="0 0 48 48" width="64" height="64" fill="currentColor">
+                                <ellipse cx="24" cy="10" rx="18" ry="6"/>
+                                <path d="M6 10v8c0 3.3 8.1 6 18 6s18-2.7 18-6V10" fill="none" stroke="currentColor" stroke-width="3"/>
+                                <path d="M6 18v8c0 3.3 8.1 6 18 6s18-2.7 18-6v-8" fill="none" stroke="currentColor" stroke-width="3"/>
+                                <path d="M6 26v8c0 3.3 8.1 6 18 6s18-2.7 18-6v-8" fill="none" stroke="currentColor" stroke-width="3"/>
+                            </svg>
+                        </div>
+                        <h2 style="font-size: var(--font-size-lg); margin-bottom: 8px;">Welcome to WebSSMS</h2>
+                        <p style="font-size: var(--font-size-sm); margin-bottom: 16px;">
+                            A web-based SQL Server Management Studio
+                        </p>
+                        @if (!ConnectionManager.IsConnected)
+                        {
+                            <button class="btn btn-primary" @onclick="() => ShowConnectionDialog = true">
+                                Connect to a Server
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-primary" @onclick="NewQuery">
+                                Open New Query
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <StatusBar ConnectionStatus="@(ConnectionManager.IsConnected ? "Connected" : "Disconnected")"
+               IsConnected="@ConnectionManager.IsConnected"
+               ServerName="@ConnectionManager.ActiveConnection?.DataSource"
+               DatabaseName="@ConnectionManager.GetCurrentDatabase()" />
+</div>
+
+<!-- Connection Dialog -->
+<ConnectionDialog IsVisible="ShowConnectionDialog"
+                  OnClose="() => ShowConnectionDialog = false"
+                  OnConnected="HandleConnected" />
+
+<!-- Backup Dialog -->
+<BackupDialog IsVisible="ShowBackupDialog"
+              OnClose="() => ShowBackupDialog = false"
+              OnScriptGenerated="OpenScript"
+              Databases="DatabaseList" />
+
+<!-- Restore Dialog -->
+<RestoreDialog IsVisible="ShowRestoreDialog"
+               OnClose="() => ShowRestoreDialog = false" />
+
+<!-- Import Wizard -->
+<ImportWizard IsVisible="ShowImportWizard"
+              OnClose="() => ShowImportWizard = false"
+              Databases="DatabaseList" />
+
+<!-- Export Wizard -->
+<ExportWizard IsVisible="ShowExportWizard"
+              OnClose="() => ShowExportWizard = false"
+              Databases="DatabaseList" />
+
+<!-- About Dialog -->
+<AboutDialog IsVisible="ShowAboutDialog"
+             OnClose="() => ShowAboutDialog = false" />
+
+<!-- Toast Notifications -->
+<Toast @ref="ToastRef" />
+
+@code {
+    // Component References
+    private ObjectExplorer? ObjectExplorerRef;
+    private QueryTabs? QueryTabsRef;
+    private Toast? ToastRef;
+
+    // UI State
+    private bool ShowConnectionDialog;
+    private bool ShowBackupDialog;
+    private bool ShowRestoreDialog;
+    private bool ShowImportWizard;
+    private bool ShowExportWizard;
+    private bool ShowAboutDialog;
+    private string ActivePanel = "welcome";
+    private string SecurityTab = "logins";
+    private List<string> DatabaseList = new();
+    private TableDefinition CurrentTableDefinition = new();
+
+    private async Task HandleConnected(ConnectionInfo info)
+    {
+        ShowConnectionDialog = false;
+        ToastRef?.Show($"Connected to {info.ServerName}", Toast.ToastType.Success);
+
+        // Load Object Explorer tree
+        if (ObjectExplorerRef != null)
+        {
+            await ObjectExplorerRef.LoadTreeAsync();
+        }
+
+        // Load database list
+        try
+        {
+            DatabaseList = await SchemaService.GetDatabasesAsync();
+        }
+        catch { }
+
+        // Initialize splitter
+        try
+        {
+            await JS.InvokeVoidAsync("WebSSMS.SplitPanel.initVertical", "main-splitter", "sidebar-panel", "editor-panel", 300);
+        }
+        catch { }
+
+        StateHasChanged();
+    }
+
+    private async Task Disconnect()
+    {
+        if (ConnectionManager.ActiveConnectionId != null)
+        {
+            await ConnectionManager.DisconnectAsync(ConnectionManager.ActiveConnectionId);
+            DatabaseList.Clear();
+            ActivePanel = "welcome";
+            ToastRef?.Show("Disconnected from server", Toast.ToastType.Info);
+            StateHasChanged();
+        }
+    }
+
+    private void NewQuery()
+    {
+        ActivePanel = "query";
+        QueryTabsRef?.AddNewTab();
+        StateHasChanged();
+    }
+
+    private void OpenNewQueryForDatabase(string database)
+    {
+        ActivePanel = "query";
+        QueryTabsRef?.AddNewTab($"USE [{database}]\nGO\n\n", $"{database} Query");
+        StateHasChanged();
+    }
+
+    private void OpenScript(string script)
+    {
+        ActivePanel = "query";
+        StateHasChanged();
+
+        // Need to defer to let QueryTabs render first
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(50);
+            await InvokeAsync(() =>
+            {
+                QueryTabsRef?.OpenTabWithScript(script);
+                StateHasChanged();
+            });
+        });
+    }
+
+    private void HandleNodeAction(DatabaseObjectNode node)
+    {
+        switch (node.ObjectType)
+        {
+            case DatabaseObjectType.TablesFolder:
+                // New table designer
+                CurrentTableDefinition = new TableDefinition
+                {
+                    DatabaseName = node.DatabaseName,
+                    SchemaName = "dbo"
+                };
+                ActivePanel = "tabledesigner";
+                break;
+
+            case DatabaseObjectType.Table when node.SchemaName != null:
+                // Open table designer for existing table
+                CurrentTableDefinition = new TableDefinition
+                {
+                    DatabaseName = node.DatabaseName,
+                    SchemaName = node.SchemaName,
+                    TableName = node.Name,
+                    IsExisting = true
+                };
+                ActivePanel = "tabledesigner";
+                break;
+
+            case DatabaseObjectType.Database:
+                ActivePanel = "dbprops";
+                break;
+
+            default:
+                break;
+        }
+
+        StateHasChanged();
+    }
+
+    private void ShowPanel(string panel)
+    {
+        switch (panel)
+        {
+            case "backup":
+                ShowBackupDialog = true;
+                break;
+            case "restore":
+                ShowRestoreDialog = true;
+                break;
+            case "import":
+                ShowImportWizard = true;
+                break;
+            case "export":
+                ShowExportWizard = true;
+                break;
+            default:
+                ActivePanel = panel;
+                break;
+        }
+        StateHasChanged();
+    }
+}

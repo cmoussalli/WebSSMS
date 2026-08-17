@@ -1,0 +1,68 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject SecurityService SecurityService
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <DropdownButton Items="Databases" Value="@SelectedDatabase"
+                        OnSelectionChanged="ChangeDatabase" Style="min-width: 150px;" />
+        <div class="toolbar-separator"></div>
+        <button class="toolbar-btn toolbar-btn-text" @onclick="LoadPermissions">
+            <span>Refresh</span>
+        </button>
+    </div>
+
+    <div style="flex: 1; overflow: auto;">
+        <table class="data-grid" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th>Grantee</th>
+                    <th>Permission</th>
+                    <th>State</th>
+                    <th>Schema</th>
+                    <th>Object</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var perm in Permissions)
+                {
+                    <tr>
+                        <td>@perm.GranteeName</td>
+                        <td>@perm.Permission</td>
+                        <td>
+                            <span class="badge @GetStateBadge(perm.State)">@perm.State</span>
+                        </td>
+                        <td>@perm.SchemaName</td>
+                        <td>@perm.ObjectName</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    private string SelectedDatabase = "master";
+    private List<PermissionEntry> Permissions = new();
+
+    private async Task ChangeDatabase(string db)
+    {
+        SelectedDatabase = db;
+        await LoadPermissions();
+    }
+
+    private async Task LoadPermissions()
+    {
+        Permissions = await SecurityService.GetObjectPermissionsAsync(SelectedDatabase);
+    }
+
+    private string GetStateBadge(PermissionState state) => state switch
+    {
+        PermissionState.Grant => "badge-success",
+        PermissionState.Deny => "badge-error",
+        PermissionState.GrantWithGrant => "badge-info",
+        _ => ""
+    };
+}

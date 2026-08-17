@@ -1,0 +1,169 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject MonitoringService MonitoringService
+@implements IDisposable
+
+<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+    <div class="toolbar">
+        <button class="toolbar-btn toolbar-btn-text" @onclick="Refresh">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M13 3a7 7 0 1 0 1 4h-2a5 5 0 1 1-1-3l-2 2h5V1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+            <span>Refresh</span>
+        </button>
+        <div class="toolbar-separator"></div>
+        <label class="form-checkbox" style="font-size: var(--font-size-xs);">
+            <input type="checkbox" @bind="AutoRefresh" @bind:after="ToggleAutoRefresh" />
+            Auto-refresh (5s)
+        </label>
+    </div>
+
+    <div class="tab-control" style="flex: 1;">
+        <div class="tab-header tab-header-sm">
+            <div class="tab-item @(ActiveTab == "processes" ? "active" : "")"
+                 @onclick='() => ActiveTab = "processes"'>Processes</div>
+            <div class="tab-item @(ActiveTab == "waits" ? "active" : "")"
+                 @onclick='() => ActiveTab = "waits"'>Wait Statistics</div>
+        </div>
+        <div class="tab-content">
+            @if (ActiveTab == "processes")
+            {
+                <div style="overflow: auto; height: 100%;">
+                    <table class="data-grid" style="width: max-content; min-width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>SPID</th>
+                                <th>Status</th>
+                                <th>Login</th>
+                                <th>Host</th>
+                                <th>Database</th>
+                                <th>Command</th>
+                                <th>CPU</th>
+                                <th>Disk I/O</th>
+                                <th>Blocked By</th>
+                                <th>Wait Type</th>
+                                <th>Program</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var proc in Processes)
+                            {
+                                <tr class="@(proc.BlockedBy > 0 ? "selected" : "")">
+                                    <td>@proc.Spid</td>
+                                    <td>
+                                        <span class="badge @GetStatusBadge(proc.Status)">@proc.Status</span>
+                                    </td>
+                                    <td>@proc.LoginName</td>
+                                    <td>@proc.HostName</td>
+                                    <td>@proc.DatabaseName</td>
+                                    <td>@proc.Command</td>
+                                    <td>@proc.CpuTime</td>
+                                    <td>@proc.DiskIO</td>
+                                    <td>@(proc.BlockedBy > 0 ? proc.BlockedBy.ToString() : "")</td>
+                                    <td>@proc.WaitType</td>
+                                    <td>@proc.ProgramName</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => KillProcess(proc.Spid)"
+                                                title="Kill process">Kill</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div style="overflow: auto; height: 100%;">
+                    <table class="data-grid" style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Wait Type</th>
+                                <th>Wait Time (ms)</th>
+                                <th>Waiting Tasks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var wait in Waits)
+                            {
+                                <tr>
+                                    <td>@wait.WaitType</td>
+                                    <td>@wait.WaitTimeMs.ToString("N0")</td>
+                                    <td>@wait.WaitingTasks.ToString("N0")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="statusbar" style="background: var(--bg-tertiary); color: var(--text-secondary);">
+        <span>Processes: @Processes.Count</span>
+        <span>Blocked: @Processes.Count(p => p.BlockedBy > 0)</span>
+        <div class="statusbar-spacer"></div>
+        <span>Last refreshed: @LastRefresh.ToString("HH:mm:ss")</span>
+    </div>
+</div>
+
+@code {
+    private List<ActiveProcess> Processes = new();
+    private List<(string WaitType, long WaitTimeMs, long WaitingTasks)> Waits = new();
+    private string ActiveTab = "processes";
+    private bool AutoRefresh;
+    private Timer? _timer;
+    private DateTime LastRefresh = DateTime.Now;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        Processes = await MonitoringService.GetActiveProcessesAsync();
+        Waits = await MonitoringService.GetTopWaitsAsync();
+        LastRefresh = DateTime.Now;
+        StateHasChanged();
+    }
+
+    private void ToggleAutoRefresh()
+    {
+        if (AutoRefresh)
+        {
+            _timer = new Timer(async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await Refresh();
+                });
+            }, null, 5000, 5000);
+        }
+        else
+        {
+            _timer?.Dispose();
+            _timer = null;
+        }
+    }
+
+    private async Task KillProcess(int spid)
+    {
+        await MonitoringService.KillProcessAsync(spid);
+        await Refresh();
+    }
+
+    private string GetStatusBadge(string status) => status.ToLower() switch
+    {
+        "running" => "badge-success",
+        "sleeping" => "badge-info",
+        "suspended" => "badge-warning",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}
