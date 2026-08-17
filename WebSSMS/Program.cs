@@ -19,6 +19,7 @@ namespace WebSSMS
             builder.Services.AddScoped<SchemaDiscoveryService>();
             builder.Services.AddScoped<ScriptGeneratorService>();
             builder.Services.AddScoped<BackupRestoreService>();
+            builder.Services.AddScoped<DatabaseAdminService>();
             builder.Services.AddScoped<SecurityService>();
             builder.Services.AddScoped<MonitoringService>();
             builder.Services.AddScoped<AgentJobService>();
