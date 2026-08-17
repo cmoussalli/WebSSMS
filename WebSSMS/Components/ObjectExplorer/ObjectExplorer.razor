@@ -326,7 +326,6 @@
         {
             case DatabaseObjectType.Server:
                 items.Add(new ContextMenuItem { Label = "New Query", OnClick = () => OnNewQuery.InvokeAsync("master") });
-                items.Add(new ContextMenuItem { Label = "New Database...", OnClick = () => OnNewDatabase.InvokeAsync() });
                 items.Add(ContextMenuItem.Separator());
                 items.Add(new ContextMenuItem { Label = "Refresh", OnClick = RefreshTree });
                 break;
@@ -338,7 +337,6 @@
                 break;
 
             case DatabaseObjectType.Database:
-                items.Add(new ContextMenuItem { Label = "New Database...", OnClick = () => OnNewDatabase.InvokeAsync() });
                 items.Add(new ContextMenuItem { Label = "New Query", OnClick = () => OnNewQuery.InvokeAsync(node.Name) });
                 items.Add(ContextMenuItem.Separator());
                 items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });

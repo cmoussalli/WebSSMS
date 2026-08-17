@@ -1,4 +1,5 @@
 @using WebSSMS.Models
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 
 @if (IsVisible)
@@ -38,7 +39,10 @@
     [Parameter] public List<ContextMenuItem> Items { get; set; } = new();
     [Parameter] public EventCallback OnClose { get; set; }
 
-    private string MenuId = $"ctx-menu-{Guid.NewGuid():N}";
+    private readonly string MenuId = $"ctx-menu-{Guid.NewGuid():N}";
+    private DotNetObjectReference<ContextMenu>? SelfRef;
+    private bool DismissRegistered;
+    private double PlacedX = double.NaN, PlacedY = double.NaN;
 
     private async Task HandleItemClick(ContextMenuItem item)
     {
@@ -49,15 +53,57 @@
             await item.OnClick.Invoke();
     }
 
+    /// <summary>Called from context-menu.js on click-outside, Escape or scroll.</summary>
+    [JSInvokable]
+    public Task CloseFromJs() => OnClose.InvokeAsync();
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (IsVisible)
+        if (!IsVisible)
         {
-            try
-            {
-                await JS.InvokeVoidAsync("WebSSMS.ContextMenu.show", MenuId, X, Y);
-            }
-            catch { }
+            PlacedX = PlacedY = double.NaN;
+            await UnregisterDismissAsync();
+            return;
         }
+
+        try
+        {
+            if (!DismissRegistered)
+            {
+                SelfRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("WebSSMS.ContextMenu.registerDismiss", MenuId, SelfRef);
+                DismissRegistered = true;
+            }
+
+            // Only reposition when the anchor actually moved. Repositioning on every
+            // render would resurrect a menu the user has already dismissed, because
+            // unrelated state changes (tree selection, for one) also trigger renders.
+            if (X != PlacedX || Y != PlacedY)
+            {
+                PlacedX = X;
+                PlacedY = Y;
+                await JS.InvokeVoidAsync("WebSSMS.ContextMenu.position", MenuId, X, Y);
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task UnregisterDismissAsync()
+    {
+        if (!DismissRegistered) return;
+        DismissRegistered = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync("WebSSMS.ContextMenu.unregisterDismiss", MenuId);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await UnregisterDismissAsync();
+        SelfRef?.Dispose();
     }
 }
