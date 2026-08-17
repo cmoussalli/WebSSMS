@@ -1,0 +1,167 @@
+/* SSMS-style two-pane dialog: page list on the left, page content on the right. */
+.db-dialog {
+    display: flex;
+    gap: 12px;
+    min-height: 420px;
+}
+
+.db-dialog-nav {
+    flex: 0 0 150px;
+    border-right: 1px solid var(--border-primary);
+    padding-right: 8px;
+}
+
+.db-dialog-nav-title {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 6px 6px;
+}
+
+.db-dialog-nav-item {
+    padding: 4px 10px;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.db-dialog-nav-item:hover {
+    background: var(--bg-hover);
+}
+
+.db-dialog-nav-item.active {
+    background: var(--bg-selected);
+    color: var(--text-white);
+}
+
+.db-dialog-page {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.db-dialog-section-label {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.db-dialog-grid-wrapper {
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid var(--border-primary);
+}
+
+.db-dialog-grid {
+    width: 100%;
+}
+
+.db-dialog-grid td {
+    padding: 2px 4px;
+}
+
+.db-dialog-grid tbody tr {
+    cursor: default;
+}
+
+.grid-input {
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    color: var(--text-primary);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    padding: 2px 4px;
+    outline: none;
+}
+
+.grid-input:hover {
+    border-color: var(--border-primary);
+}
+
+.grid-input:focus {
+    background: var(--bg-input);
+    border-color: var(--border-focus);
+}
+
+.grid-readonly {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    padding: 2px 4px;
+}
+
+.db-dialog-autogrowth {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.db-dialog-grid-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.db-dialog-options-grid {
+    max-width: 460px;
+}
+
+.db-dialog-narrow {
+    max-width: 120px;
+}
+
+/* Inline stand-in for SSMS's "Change Autogrowth" sub-dialog. */
+.db-dialog-subpanel {
+    border: 1px solid var(--border-secondary);
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.db-dialog-subpanel-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.db-dialog-subpanel-body.disabled {
+    opacity: 0.5;
+}
+
+.db-dialog-subpanel-footer {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.db-dialog-message {
+    padding: 8px;
+    border-radius: 3px;
+    font-size: var(--font-size-sm);
+    background: var(--bg-tertiary);
+}
+
+.db-dialog-message.error {
+    background: rgba(190, 17, 0, 0.1);
+    color: var(--text-error);
+}
+
+.db-dialog-message.success {
+    background: rgba(45, 139, 45, 0.1);
+    color: var(--text-success);
+}
+
+.db-dialog-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}

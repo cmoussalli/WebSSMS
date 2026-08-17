@@ -98,7 +98,8 @@
                         OnDisconnectRequested="Disconnect"
                         OnNewQuery="OpenNewQueryForDatabase"
                         OnScriptGenerated="OpenScript"
-                        OnNodeAction="HandleNodeAction" />
+                        OnNodeAction="HandleNodeAction"
+                        OnNewDatabase="() => ShowNewDatabaseDialog = true" />
 
         <!-- Vertical Splitter -->
         <div class="splitter" id="main-splitter"></div>
@@ -227,6 +228,12 @@
                   OnClose="() => ShowConnectionDialog = false"
                   OnConnected="HandleConnected" />
 
+<!-- New Database Dialog -->
+<NewDatabaseDialog IsVisible="ShowNewDatabaseDialog"
+                   OnClose="() => ShowNewDatabaseDialog = false"
+                   OnScriptGenerated="OpenScript"
+                   OnDatabaseCreated="HandleDatabaseCreated" />
+
 <!-- Backup Dialog -->
 <BackupDialog IsVisible="ShowBackupDialog"
               OnClose="() => ShowBackupDialog = false"
@@ -267,6 +274,7 @@
     private bool ShowImportWizard;
     private bool ShowExportWizard;
     private bool ShowAboutDialog;
+    private bool ShowNewDatabaseDialog;
     private string ActivePanel = "welcome";
     private string SecurityTab = "logins";
     private List<string> DatabaseList = new();
@@ -341,6 +349,25 @@
                 StateHasChanged();
             });
         });
+    }
+
+    private async Task HandleDatabaseCreated(string databaseName)
+    {
+        ShowNewDatabaseDialog = false;
+        ToastRef?.Show($"Database '{databaseName}' created", Toast.ToastType.Success);
+
+        if (ObjectExplorerRef != null)
+        {
+            await ObjectExplorerRef.RefreshDatabasesAsync();
+        }
+
+        try
+        {
+            DatabaseList = await SchemaService.GetDatabasesAsync();
+        }
+        catch { }
+
+        StateHasChanged();
     }
 
     private void HandleNodeAction(DatabaseObjectNode node)

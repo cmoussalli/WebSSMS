@@ -1,0 +1,652 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject DatabaseAdminService AdminService
+
+<Modal IsVisible="IsVisible" Title="New Database" OnClose="Close"
+       Size="Modal.ModalSize.ExtraLarge" CloseOnOverlayClick="false">
+    <ChildContent>
+        <div class="db-dialog">
+            <div class="db-dialog-nav">
+                <div class="db-dialog-nav-title">Select a page</div>
+                @foreach (var navPage in Pages)
+                {
+                    <div class="db-dialog-nav-item @(Page == navPage.Key ? "active" : "")"
+                         @onclick="() => Page = navPage.Key">
+                        @navPage.Label
+                    </div>
+                }
+            </div>
+
+            <div class="db-dialog-page">
+                @if (Page == "general")
+                {
+                    <div class="form-group form-group-horizontal">
+                        <label class="form-label">Database name:</label>
+                        <input class="form-input @(NameError ? "error" : "")"
+                               @bind="DatabaseName" @bind:event="oninput" />
+                    </div>
+
+                    <div class="form-group form-group-horizontal">
+                        <label class="form-label">Owner:</label>
+                        <select class="form-select" @bind="Options.Owner">
+                            <option value="@DatabaseCreateOptions.DefaultOwner">@DatabaseCreateOptions.DefaultOwner</option>
+                            @foreach (var login in Logins)
+                            {
+                                <option value="@login">@login</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="db-dialog-section-label">Database files:</div>
+                    <div class="db-dialog-grid-wrapper">
+                        <table class="data-grid db-dialog-grid">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 130px;">Logical Name</th>
+                                    <th style="min-width: 105px;">File Type</th>
+                                    <th style="min-width: 110px;">Filegroup</th>
+                                    <th style="min-width: 95px;">Initial Size (MB)</th>
+                                    <th style="min-width: 190px;">Autogrowth / Maxsize</th>
+                                    <th style="min-width: 180px;">Path</th>
+                                    <th style="min-width: 140px;">File Name</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var file in Options.Files)
+                                {
+                                    <tr @key="file.Id"
+                                        class="@(SelectedFileId == file.Id ? "selected" : "")"
+                                        @onclick="() => SelectedFileId = file.Id">
+                                        <td><input class="grid-input" @bind="file.LogicalName" @bind:event="oninput" /></td>
+                                        <td>
+                                            <select class="grid-input" value="@file.FileType"
+                                                    @onchange="e => ChangeFileType(file, e)">
+                                                <option value="@DatabaseFileType.Rows">ROWS Data</option>
+                                                <option value="@DatabaseFileType.Log">LOG</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            @if (file.FileType == DatabaseFileType.Log)
+                                            {
+                                                <span class="grid-readonly">Not Applicable</span>
+                                            }
+                                            else
+                                            {
+                                                <select class="grid-input" @bind="file.FileGroup">
+                                                    @foreach (var fileGroup in Options.FileGroups)
+                                                    {
+                                                        <option value="@fileGroup.Name">@fileGroup.Name</option>
+                                                    }
+                                                </select>
+                                            }
+                                        </td>
+                                        <td><input class="grid-input" type="number" min="1" @bind="file.InitialSizeMB" /></td>
+                                        <td>
+                                            <div class="db-dialog-autogrowth">
+                                                <span>@file.AutoGrowthDescription</span>
+                                                <button class="btn btn-sm" title="Change Autogrowth"
+                                                        @onclick="() => ToggleAutoGrowthEditor(file)"
+                                                        @onclick:stopPropagation>…</button>
+                                            </div>
+                                        </td>
+                                        <td><input class="grid-input" @bind="file.Path" @bind:event="oninput" /></td>
+                                        <td><input class="grid-input" @bind="file.FileName" @bind:event="oninput" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (AutoGrowthEditorFile != null)
+                    {
+                        <div class="db-dialog-subpanel">
+                            <div class="db-dialog-subpanel-title">
+                                Change Autogrowth for @(string.IsNullOrWhiteSpace(AutoGrowthEditorFile.LogicalName)
+                                    ? "the selected file" : AutoGrowthEditorFile.LogicalName)
+                            </div>
+
+                            <label class="form-checkbox">
+                                <input type="checkbox" @bind="AutoGrowthEditorFile.AutoGrowthEnabled" />
+                                Enable Autogrowth
+                            </label>
+
+                            <div class="db-dialog-subpanel-body @(AutoGrowthEditorFile.AutoGrowthEnabled ? "" : "disabled")">
+                                <div class="form-group form-group-horizontal">
+                                    <label class="form-label">File Growth:</label>
+                                    <input class="form-input db-dialog-narrow" type="number" min="1"
+                                           disabled="@(!AutoGrowthEditorFile.AutoGrowthEnabled)"
+                                           @bind="AutoGrowthEditorFile.GrowthValue" />
+                                    <select class="form-select db-dialog-narrow"
+                                            disabled="@(!AutoGrowthEditorFile.AutoGrowthEnabled)"
+                                            @bind="AutoGrowthEditorFile.GrowthMode">
+                                        <option value="@FileGrowthMode.Percent">In Percent</option>
+                                        <option value="@FileGrowthMode.Megabytes">In Megabytes</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="form-label">Maximum File Size:</label>
+                                    <label class="form-checkbox">
+                                        <input type="radio" name="maxsize-@AutoGrowthEditorFile.Id"
+                                               checked="@(!AutoGrowthEditorFile.MaxSizeLimited)"
+                                               disabled="@(!AutoGrowthEditorFile.AutoGrowthEnabled)"
+                                               @onchange="() => AutoGrowthEditorFile.MaxSizeLimited = false" />
+                                        Unlimited
+                                    </label>
+                                    <label class="form-checkbox">
+                                        <input type="radio" name="maxsize-@AutoGrowthEditorFile.Id"
+                                               checked="@AutoGrowthEditorFile.MaxSizeLimited"
+                                               disabled="@(!AutoGrowthEditorFile.AutoGrowthEnabled)"
+                                               @onchange="() => AutoGrowthEditorFile.MaxSizeLimited = true" />
+                                        Limited to (MB)
+                                        <input class="form-input db-dialog-narrow" type="number" min="1"
+                                               disabled="@(!AutoGrowthEditorFile.AutoGrowthEnabled || !AutoGrowthEditorFile.MaxSizeLimited)"
+                                               @bind="AutoGrowthEditorFile.MaxSizeMB" />
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="db-dialog-subpanel-footer">
+                                <button class="btn btn-sm" @onclick="() => AutoGrowthEditorFileId = null">Done</button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="db-dialog-grid-actions">
+                        <button class="btn btn-sm" @onclick="AddFile">Add</button>
+                        <button class="btn btn-sm" @onclick="RemoveFile"
+                                disabled="@(SelectedFileId == null || Options.Files.Count <= 1)">Remove</button>
+                    </div>
+                }
+                else if (Page == "options")
+                {
+                    <div class="form-group form-group-horizontal">
+                        <label class="form-label">Collation:</label>
+                        <select class="form-select" @bind="Options.Collation">
+                            <option value="@DatabaseCreateOptions.ServerDefaultCollation">@DatabaseCreateOptions.ServerDefaultCollation</option>
+                            @foreach (var collation in Collations)
+                            {
+                                <option value="@collation">@collation</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="form-group form-group-horizontal">
+                        <label class="form-label">Recovery model:</label>
+                        <select class="form-select" @bind="Options.RecoveryModel">
+                            <option value="@DatabaseRecoveryModel.Full">Full</option>
+                            <option value="@DatabaseRecoveryModel.BulkLogged">Bulk-logged</option>
+                            <option value="@DatabaseRecoveryModel.Simple">Simple</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group form-group-horizontal">
+                        <label class="form-label">Compatibility level:</label>
+                        <select class="form-select" @bind="Options.CompatibilityLevel">
+                            <option value="">&lt;server default&gt;</option>
+                            @foreach (var level in CompatibilityLevels)
+                            {
+                                <option value="@level">@DescribeCompatibilityLevel(level)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="form-group form-group-horizontal">
+                        <label class="form-label">Containment type:</label>
+                        <select class="form-select" @bind="Options.Containment">
+                            <option value="@DatabaseContainmentType.None">None</option>
+                            <option value="@DatabaseContainmentType.Partial">Partial</option>
+                        </select>
+                    </div>
+
+                    <div class="db-dialog-section-label">Other options:</div>
+                    <div class="property-grid db-dialog-options-grid">
+                        <div class="property-grid-category">Automatic</div>
+                        <div class="property-grid-label">Auto Close</div>
+                        <div class="property-grid-value">
+                            <select value="@Options.AutoClose.ToString()"
+                                    @onchange="e => Options.AutoClose = ParseBool(e)">
+                                <option value="False">False</option>
+                                <option value="True">True</option>
+                            </select>
+                        </div>
+                        <div class="property-grid-label">Auto Create Statistics</div>
+                        <div class="property-grid-value">
+                            <select value="@Options.AutoCreateStatistics.ToString()"
+                                    @onchange="e => Options.AutoCreateStatistics = ParseBool(e)">
+                                <option value="True">True</option>
+                                <option value="False">False</option>
+                            </select>
+                        </div>
+                        <div class="property-grid-label">Auto Shrink</div>
+                        <div class="property-grid-value">
+                            <select value="@Options.AutoShrink.ToString()"
+                                    @onchange="e => Options.AutoShrink = ParseBool(e)">
+                                <option value="False">False</option>
+                                <option value="True">True</option>
+                            </select>
+                        </div>
+                        <div class="property-grid-label">Auto Update Statistics</div>
+                        <div class="property-grid-value">
+                            <select value="@Options.AutoUpdateStatistics.ToString()"
+                                    @onchange="e => Options.AutoUpdateStatistics = ParseBool(e)">
+                                <option value="True">True</option>
+                                <option value="False">False</option>
+                            </select>
+                        </div>
+
+                        <div class="property-grid-category">Recovery</div>
+                        <div class="property-grid-label">Page Verify</div>
+                        <div class="property-grid-value">
+                            <select @bind="Options.PageVerify">
+                                <option value="CHECKSUM">CHECKSUM</option>
+                                <option value="TORN_PAGE_DETECTION">TORN_PAGE_DETECTION</option>
+                                <option value="NONE">NONE</option>
+                            </select>
+                        </div>
+
+                        <div class="property-grid-category">State</div>
+                        <div class="property-grid-label">Database Read-Only</div>
+                        <div class="property-grid-value">
+                            <select value="@Options.IsReadOnly.ToString()"
+                                    @onchange="e => Options.IsReadOnly = ParseBool(e)">
+                                <option value="False">False</option>
+                                <option value="True">True</option>
+                            </select>
+                        </div>
+
+                        <div class="property-grid-category">Miscellaneous</div>
+                        <div class="property-grid-label">Trustworthy</div>
+                        <div class="property-grid-value">
+                            <select value="@Options.Trustworthy.ToString()"
+                                    @onchange="e => Options.Trustworthy = ParseBool(e)">
+                                <option value="False">False</option>
+                                <option value="True">True</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+                else if (Page == "filegroups")
+                {
+                    <div class="db-dialog-section-label">Rows:</div>
+                    <div class="db-dialog-grid-wrapper">
+                        <table class="data-grid db-dialog-grid">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 180px;">Name</th>
+                                    <th style="min-width: 60px;">Files</th>
+                                    <th style="min-width: 80px;">Read-Only</th>
+                                    <th style="min-width: 80px;">Default</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var fileGroup in Options.FileGroups)
+                                {
+                                    <tr @key="fileGroup"
+                                        class="@(SelectedFileGroup == fileGroup.Name ? "selected" : "")"
+                                        @onclick="() => SelectedFileGroup = fileGroup.Name">
+                                        <td>
+                                            @if (fileGroup.IsPrimary)
+                                            {
+                                                <span class="grid-readonly">@fileGroup.Name</span>
+                                            }
+                                            else
+                                            {
+                                                <input class="grid-input" value="@fileGroup.Name"
+                                                       @onchange="e => RenameFileGroup(fileGroup, e)" />
+                                            }
+                                        </td>
+                                        <td class="grid-readonly">@CountFilesIn(fileGroup.Name)</td>
+                                        <td>
+                                            <input type="checkbox" disabled="@fileGroup.IsPrimary"
+                                                   @bind="fileGroup.IsReadOnly" />
+                                        </td>
+                                        <td>
+                                            <input type="radio" name="default-filegroup"
+                                                   checked="@fileGroup.IsDefault"
+                                                   @onchange="() => SetDefaultFileGroup(fileGroup)" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="db-dialog-grid-actions">
+                        <button class="btn btn-sm" @onclick="AddFileGroup">Add Filegroup</button>
+                        <button class="btn btn-sm" @onclick="RemoveFileGroup"
+                                disabled="@(!CanRemoveSelectedFileGroup)">Remove</button>
+                    </div>
+                    <div class="form-hint">
+                        A filegroup is only created when at least one data file is assigned to it on the General page.
+                    </div>
+                }
+
+                @if (Errors.Count > 0)
+                {
+                    <div class="db-dialog-message error">
+                        @foreach (var error in Errors)
+                        {
+                            <div>@error</div>
+                        }
+                    </div>
+                }
+
+                @if (IsRunning)
+                {
+                    <div class="db-dialog-message">
+                        <div class="db-dialog-progress">
+                            <div class="spinner"></div>
+                            <span>Creating database...</span>
+                        </div>
+                    </div>
+                }
+                else if (ResultMessage != null)
+                {
+                    <div class="db-dialog-message @(HasError ? "error" : "success")">@ResultMessage</div>
+                }
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn" @onclick="GenerateScript" disabled="@IsRunning">Script</button>
+        <button class="btn btn-primary" @onclick="CreateDatabase" disabled="@IsRunning">OK</button>
+        <button class="btn" @onclick="Close" disabled="@IsRunning">Cancel</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string> OnScriptGenerated { get; set; }
+    [Parameter] public EventCallback<string> OnDatabaseCreated { get; set; }
+
+    private static readonly (string Key, string Label)[] Pages =
+    {
+        ("general", "General"),
+        ("options", "Options"),
+        ("filegroups", "Filegroups")
+    };
+
+    private DatabaseCreateOptions Options = new();
+    private string Page = "general";
+
+    private List<string> Collations = new();
+    private List<int> CompatibilityLevels = new();
+    private List<string> Logins = new();
+
+    private string? SelectedFileId;
+    private string? SelectedFileGroup;
+    private string? AutoGrowthEditorFileId;
+
+    private List<string> Errors = new();
+    private bool IsRunning;
+    private string? ResultMessage;
+    private bool HasError;
+
+    private bool _wasVisible;
+    private int _newFileGroupCounter;
+
+    private DatabaseFileSpec? AutoGrowthEditorFile =>
+        Options.Files.FirstOrDefault(f => f.Id == AutoGrowthEditorFileId);
+
+    private bool NameError => Errors.Count > 0 && string.IsNullOrWhiteSpace(Options.DatabaseName);
+
+    private bool CanRemoveSelectedFileGroup =>
+        SelectedFileGroup != null &&
+        Options.FileGroups.Any(g => g.Name == SelectedFileGroup && !g.IsPrimary);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible && !_wasVisible)
+        {
+            await ResetAsync();
+        }
+        _wasVisible = IsVisible;
+    }
+
+    private async Task ResetAsync()
+    {
+        Page = "general";
+        Errors.Clear();
+        ResultMessage = null;
+        HasError = false;
+        IsRunning = false;
+        SelectedFileId = null;
+        SelectedFileGroup = null;
+        AutoGrowthEditorFileId = null;
+        _newFileGroupCounter = 0;
+
+        var (dataPath, logPath) = await AdminService.GetDefaultFilePathsAsync();
+        Options = AdminService.BuildDefaultOptions(dataPath, logPath);
+
+        Logins = await AdminService.GetLoginNamesAsync();
+        Collations = await AdminService.GetCollationsAsync();
+
+        var (levels, _) = await AdminService.GetCompatibilityLevelsAsync();
+        CompatibilityLevels = levels;
+    }
+
+    /// <summary>
+    /// Renaming the database renames the files that still carry the generated name, the way SSMS
+    /// updates its file grid as you type.
+    /// </summary>
+    private string DatabaseName
+    {
+        get => Options.DatabaseName;
+        set
+        {
+            var previousName = Options.DatabaseName;
+            Options.DatabaseName = value;
+            AdminService.ApplyDatabaseNameToFiles(Options, previousName);
+        }
+    }
+
+    private void ChangeFileType(DatabaseFileSpec file, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<DatabaseFileType>(e.Value?.ToString(), out var fileType)) return;
+        if (file.FileType == fileType) return;
+
+        file.FileType = fileType;
+
+        if (fileType == DatabaseFileType.Log)
+        {
+            file.FileGroup = string.Empty;
+            file.FileName = ReplaceExtension(file.FileName, ".ldf");
+        }
+        else
+        {
+            file.FileGroup = "PRIMARY";
+            file.FileName = ReplaceExtension(file.FileName, ".ndf");
+        }
+    }
+
+    private void ToggleAutoGrowthEditor(DatabaseFileSpec file)
+    {
+        SelectedFileId = file.Id;
+        AutoGrowthEditorFileId = AutoGrowthEditorFileId == file.Id ? null : file.Id;
+    }
+
+    private void AddFile()
+    {
+        // New rows follow the last data file so they inherit its path, as SSMS does.
+        var template = Options.Files.LastOrDefault(f => f.FileType == DatabaseFileType.Rows)
+                       ?? Options.Files.LastOrDefault();
+
+        var index = Options.Files.Count(f => f.FileType == DatabaseFileType.Rows);
+        var baseName = string.IsNullOrWhiteSpace(Options.DatabaseName) ? "newfile" : Options.DatabaseName;
+
+        var file = new DatabaseFileSpec
+        {
+            LogicalName = $"{baseName}_{index}",
+            FileType = DatabaseFileType.Rows,
+            FileGroup = template?.FileGroup is { Length: > 0 } group ? group : "PRIMARY",
+            Path = template?.Path ?? string.Empty,
+            FileName = $"{baseName}_{index}.ndf"
+        };
+
+        Options.Files.Add(file);
+        SelectedFileId = file.Id;
+    }
+
+    private void RemoveFile()
+    {
+        var file = Options.Files.FirstOrDefault(f => f.Id == SelectedFileId);
+        if (file == null) return;
+
+        Options.Files.Remove(file);
+        if (AutoGrowthEditorFileId == file.Id) AutoGrowthEditorFileId = null;
+        SelectedFileId = null;
+    }
+
+    private void AddFileGroup()
+    {
+        string name;
+        do
+        {
+            _newFileGroupCounter++;
+            name = $"FileGroup_{_newFileGroupCounter}";
+        }
+        while (Options.FileGroups.Any(g => g.Name.Equals(name, StringComparison.OrdinalIgnoreCase)));
+
+        Options.FileGroups.Add(new DatabaseFileGroupSpec { Name = name });
+        SelectedFileGroup = name;
+    }
+
+    private void RemoveFileGroup()
+    {
+        var fileGroup = Options.FileGroups.FirstOrDefault(g => g.Name == SelectedFileGroup && !g.IsPrimary);
+        if (fileGroup == null) return;
+
+        // Files pointing at the removed filegroup fall back to PRIMARY.
+        foreach (var file in Options.Files.Where(f => f.FileGroup == fileGroup.Name))
+        {
+            file.FileGroup = "PRIMARY";
+        }
+
+        Options.FileGroups.Remove(fileGroup);
+        if (fileGroup.IsDefault)
+        {
+            var primary = Options.FileGroups.FirstOrDefault(g => g.IsPrimary);
+            if (primary != null) primary.IsDefault = true;
+        }
+
+        SelectedFileGroup = null;
+    }
+
+    private void RenameFileGroup(DatabaseFileGroupSpec fileGroup, ChangeEventArgs e)
+    {
+        var newName = e.Value?.ToString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(newName) || newName == fileGroup.Name) return;
+
+        var oldName = fileGroup.Name;
+        fileGroup.Name = newName;
+
+        foreach (var file in Options.Files.Where(f => f.FileGroup == oldName))
+        {
+            file.FileGroup = newName;
+        }
+
+        if (SelectedFileGroup == oldName) SelectedFileGroup = newName;
+    }
+
+    private void SetDefaultFileGroup(DatabaseFileGroupSpec fileGroup)
+    {
+        foreach (var group in Options.FileGroups)
+        {
+            group.IsDefault = group == fileGroup;
+        }
+    }
+
+    private int CountFilesIn(string fileGroupName) =>
+        Options.Files.Count(f => f.FileType == DatabaseFileType.Rows && f.FileGroup == fileGroupName);
+
+    private async Task GenerateScript()
+    {
+        if (!ValidateForm()) return;
+
+        var script = AdminService.GenerateCreateDatabaseScript(Options);
+        await OnScriptGenerated.InvokeAsync(script);
+        await Close();
+    }
+
+    private async Task CreateDatabase()
+    {
+        if (!ValidateForm()) return;
+
+        if (await AdminService.DatabaseExistsAsync(Options.DatabaseName))
+        {
+            Errors = new List<string> { $"A database named '{Options.DatabaseName}' already exists on this server." };
+            return;
+        }
+
+        IsRunning = true;
+        ResultMessage = null;
+        StateHasChanged();
+
+        var result = await AdminService.CreateDatabaseAsync(Options);
+
+        IsRunning = false;
+        HasError = result.HasErrors;
+
+        if (result.HasErrors)
+        {
+            ResultMessage = result.Messages.LastOrDefault(m => m.Severity == MessageSeverity.Error)?.Text
+                            ?? "Creating the database failed.";
+            StateHasChanged();
+            return;
+        }
+
+        var createdName = Options.DatabaseName;
+        await OnDatabaseCreated.InvokeAsync(createdName);
+        await Close();
+    }
+
+    private bool ValidateForm()
+    {
+        Errors = AdminService.Validate(Options);
+        if (Errors.Count > 0)
+        {
+            Page = "general";
+            ResultMessage = null;
+            return false;
+        }
+        return true;
+    }
+
+    private async Task Close()
+    {
+        Errors.Clear();
+        ResultMessage = null;
+        await OnClose.InvokeAsync();
+    }
+
+    // Blazor renders a bool-valued attribute as a boolean attribute, which never matches an
+    // <option value>. Bool dropdowns therefore bind through the string form explicitly.
+    private static bool ParseBool(ChangeEventArgs e) =>
+        bool.TryParse(e.Value?.ToString(), out var value) && value;
+
+    private static string ReplaceExtension(string fileName, string extension)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return fileName;
+
+        var dot = fileName.LastIndexOf('.');
+        var stem = dot < 0 ? fileName : fileName.Substring(0, dot);
+        return stem + extension;
+    }
+
+    private static string DescribeCompatibilityLevel(int level) => level switch
+    {
+        170 => "SQL Server 2025 (170)",
+        160 => "SQL Server 2022 (160)",
+        150 => "SQL Server 2019 (150)",
+        140 => "SQL Server 2017 (140)",
+        130 => "SQL Server 2016 (130)",
+        120 => "SQL Server 2014 (120)",
+        110 => "SQL Server 2012 (110)",
+        100 => "SQL Server 2008 (100)",
+        90 => "SQL Server 2005 (90)",
+        80 => "SQL Server 2000 (80)",
+        _ => $"Level {level}"
+    };
+}

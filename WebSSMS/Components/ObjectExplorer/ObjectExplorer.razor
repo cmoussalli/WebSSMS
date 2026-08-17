@@ -61,6 +61,7 @@
     [Parameter] public EventCallback<string> OnNewQuery { get; set; }
     [Parameter] public EventCallback<string> OnScriptGenerated { get; set; }
     [Parameter] public EventCallback<DatabaseObjectNode> OnNodeAction { get; set; }
+    [Parameter] public EventCallback OnNewDatabase { get; set; }
 
     private List<DatabaseObjectNode> TreeNodes = new();
     private DatabaseObjectNode? SelectedNode;
@@ -90,18 +91,7 @@
             ObjectType = DatabaseObjectType.DatabasesFolder
         };
 
-        var databases = await SchemaService.GetDatabasesAsync();
-        foreach (var db in databases)
-        {
-            var dbNode = new DatabaseObjectNode
-            {
-                Name = db,
-                ObjectType = DatabaseObjectType.Database,
-                DatabaseName = db
-            };
-            dbFolder.Children.Add(dbNode);
-        }
-        dbFolder.ChildrenLoaded = true;
+        await LoadDatabasesAsync(dbFolder);
 
         serverNode.Children.Add(dbFolder);
 
@@ -141,6 +131,9 @@
         {
             switch (node.ObjectType)
             {
+                case DatabaseObjectType.DatabasesFolder:
+                    await LoadDatabasesAsync(node);
+                    break;
                 case DatabaseObjectType.Database:
                     await LoadDatabaseChildrenAsync(node);
                     break;
@@ -205,6 +198,45 @@
         node.IsLoading = false;
         node.ChildrenLoaded = true;
         StateHasChanged();
+    }
+
+    private async Task LoadDatabasesAsync(DatabaseObjectNode dbFolder)
+    {
+        var databases = await SchemaService.GetDatabasesAsync();
+        dbFolder.Children = databases
+            .Select(db => new DatabaseObjectNode
+            {
+                Name = db,
+                ObjectType = DatabaseObjectType.Database,
+                DatabaseName = db
+            })
+            .ToList();
+        dbFolder.ChildrenLoaded = true;
+    }
+
+    /// <summary>Reloads just the Databases folder, e.g. after a database is created.</summary>
+    public async Task RefreshDatabasesAsync()
+    {
+        var dbFolder = FindNode(TreeNodes, DatabaseObjectType.DatabasesFolder);
+        if (dbFolder == null)
+        {
+            await LoadTreeAsync();
+            return;
+        }
+
+        await RefreshNode(dbFolder);
+    }
+
+    private static DatabaseObjectNode? FindNode(IEnumerable<DatabaseObjectNode> nodes, DatabaseObjectType objectType)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.ObjectType == objectType) return node;
+
+            var match = FindNode(node.Children, objectType);
+            if (match != null) return match;
+        }
+        return null;
     }
 
     private Task LoadDatabaseChildrenAsync(DatabaseObjectNode dbNode)
@@ -292,7 +324,21 @@
 
         switch (node.ObjectType)
         {
+            case DatabaseObjectType.Server:
+                items.Add(new ContextMenuItem { Label = "New Query", OnClick = () => OnNewQuery.InvokeAsync("master") });
+                items.Add(new ContextMenuItem { Label = "New Database...", OnClick = () => OnNewDatabase.InvokeAsync() });
+                items.Add(ContextMenuItem.Separator());
+                items.Add(new ContextMenuItem { Label = "Refresh", OnClick = RefreshTree });
+                break;
+
+            case DatabaseObjectType.DatabasesFolder:
+                items.Add(new ContextMenuItem { Label = "New Database...", OnClick = () => OnNewDatabase.InvokeAsync() });
+                items.Add(ContextMenuItem.Separator());
+                items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });
+                break;
+
             case DatabaseObjectType.Database:
+                items.Add(new ContextMenuItem { Label = "New Database...", OnClick = () => OnNewDatabase.InvokeAsync() });
                 items.Add(new ContextMenuItem { Label = "New Query", OnClick = () => OnNewQuery.InvokeAsync(node.Name) });
                 items.Add(ContextMenuItem.Separator());
                 items.Add(new ContextMenuItem { Label = "Refresh", OnClick = () => RefreshNode(node) });
