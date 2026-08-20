@@ -1,0 +1,372 @@
+﻿@using WebSSMS.Models
+@using WebSSMS.Services
+@implements IDisposable
+@inject SqlAiAgent Agent
+@inject AiSettingsProvider SettingsProvider
+@inject ConnectionManager ConnectionManager
+@inject IJSRuntime JS
+
+@* Describe a script in English; the model reads the live schema, asks when the
+   request is ambiguous, and its answer is appended -- with a header comment --
+   to the bottom of the open query tab. *@
+
+<div class="ai-panel @(IsVisible ? "" : "hidden")" id="ai-panel">
+    <div class="sidebar-header">
+        <span>AI Assistant</span>
+        <div class="sidebar-header-actions">
+            <button class="toolbar-btn" title="New conversation" @onclick="StartOver" disabled="@IsBusy">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <path d="M13 3a7 7 0 1 0 1 4h-2a5 5 0 1 1-1-3l-2 2h5V1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+            </button>
+            <button class="toolbar-btn" title="AI settings" @onclick="() => ShowSettings = true">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <circle cx="8" cy="8" r="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"
+                          stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+            </button>
+            <button class="toolbar-btn" title="Close panel" @onclick="() => OnClose.InvokeAsync()">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="ai-panel-subheader">
+        <span class="ai-model-badge" title="@SettingsProvider.Current.ResolvedBaseUrl">
+            @SettingsProvider.Current.ShortLabel
+        </span>
+        <span style="margin-left: auto;">
+            @(ConnectionManager.IsConnected ? ConnectionManager.GetCurrentDatabase() : "not connected")
+        </span>
+    </div>
+
+    @if (!SettingsProvider.IsUsable)
+    {
+        <div class="ai-notice">
+            No LLM is configured yet. Open <strong>AI settings</strong> and point WebSSMS at an endpoint —
+            a local Ollama, DeepSeek, OpenAI, or anything else that speaks the OpenAI chat-completions
+            protocol.
+            <div style="margin-top: 8px;">
+                <button class="btn btn-sm btn-primary" @onclick="() => ShowSettings = true">AI settings</button>
+            </div>
+        </div>
+    }
+    else if (!ConnectionManager.IsConnected)
+    {
+        <div class="ai-notice">
+            Connect to a server first. The assistant reads the live schema before it writes anything, so it
+            needs a connection to work from.
+        </div>
+    }
+
+    <div class="ai-messages" id="ai-messages">
+        @if (Entries.Count == 0)
+        {
+            <div class="ai-empty">
+                Describe the script you want. It is checked against the real schema and appended to the
+                bottom of your current query tab.
+                <div class="ai-empty-examples">
+                    @foreach (var example in Examples)
+                    {
+                        <div class="ai-example" @onclick="() => UseExample(example)">@example</div>
+                    }
+                </div>
+            </div>
+        }
+
+        @foreach (var entry in Entries)
+        {
+            <div class="ai-message @MessageClass(entry)">
+                @if (entry.Steps.Count > 0)
+                {
+                    <details class="ai-steps">
+                        <summary>Checked @entry.Steps.Count @(entry.Steps.Count == 1 ? "thing" : "things") in the database</summary>
+                        @foreach (var step in entry.Steps)
+                        {
+                            <div class="ai-step @(step.Failed ? "ai-step-failed" : "")">
+                                <span class="ai-step-name">@step.Tool</span>
+                                <span>@step.Target</span>
+                                <span style="margin-left: auto; white-space: nowrap;">@step.Result</span>
+                            </div>
+                        }
+                    </details>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(entry.Text))
+                {
+                    <div class="ai-bubble">
+                        @if (IsQuestion(entry))
+                        {
+                            <span class="ai-question-tag">Needs an answer before it can write this</span>
+                        }
+                        @entry.Text
+                    </div>
+                }
+
+                @if (entry.Sql != null)
+                {
+                    <div class="ai-script">
+                        <div class="ai-script-header">
+                            <span>Generated script</span>
+                            <div class="ai-script-actions">
+                                <button class="btn btn-sm" @onclick="() => Insert(entry)" title="Append it to the current query tab again">
+                                    Insert again
+                                </button>
+                                <button class="btn btn-sm" @onclick="() => Copy(entry)">Copy</button>
+                            </div>
+                        </div>
+                        <pre>@entry.Sql</pre>
+                    </div>
+
+                    @if (entry.InsertedInto != null)
+                    {
+                        <div class="ai-inserted">
+                            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 8.5l3.5 3.5L13 5"/>
+                            </svg>
+                            Appended to @entry.InsertedInto
+                        </div>
+                    }
+                }
+            </div>
+        }
+
+        @if (IsBusy)
+        {
+            <div class="ai-working">
+                <span class="ai-spinner"></span>
+                <span>@Status</span>
+            </div>
+        }
+    </div>
+
+    <div class="ai-composer">
+        <textarea id="@ComposerId" placeholder="e.g. add a stored procedure that returns unpaid invoices per customer"
+                  @bind="Draft" @bind:event="oninput" @onkeydown="HandleKeyDown"
+                  disabled="@(IsBusy || !SettingsProvider.IsUsable)"></textarea>
+
+        <div class="ai-composer-actions">
+            <span class="ai-hint">Ctrl+Enter to send</span>
+
+            @if (IsBusy)
+            {
+                <button class="btn btn-sm" @onclick="Cancel">Stop</button>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-primary" @onclick="Ask"
+                        disabled="@(string.IsNullOrWhiteSpace(Draft) || !SettingsProvider.IsUsable)">
+                    Generate
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+<AiSettingsDialog IsVisible="ShowSettings"
+                  OnClose="() => ShowSettings = false"
+                  OnSaved="StateHasChanged" />
+
+@code {
+    /// <summary>Hidden rather than unmounted, so the conversation survives a close/open.</summary>
+    [Parameter] public bool IsVisible { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Databases on the connected server, for the model's context.</summary>
+    [Parameter] public List<string> Databases { get; set; } = new();
+
+    /// <summary>Reads what is currently in the query tab. Returns null when there is no tab.</summary>
+    [Parameter] public Func<Task<string?>>? CurrentScriptProvider { get; set; }
+
+    /// <summary>Appends a script to the current tab and returns that tab's title.</summary>
+    [Parameter] public Func<string, Task<string?>>? ScriptInserter { get; set; }
+
+    private static readonly string[] Examples =
+    {
+        "List the ten customers with the highest total order value this year",
+        "Add a non-clustered index for the orders-by-customer lookup",
+        "Write a stored procedure that archives orders older than two years"
+    };
+
+    private readonly List<AiChatEntry> Entries = new();
+
+    private string ComposerId { get; } = $"ai-composer-{Guid.NewGuid():N}";
+    private string Draft = string.Empty;
+    private string Status = "Thinking...";
+    private bool IsBusy;
+    private bool ShowSettings;
+    private CancellationTokenSource? _cancellation;
+
+    protected override void OnInitialized()
+    {
+        SettingsProvider.Changed += HandleSettingsChanged;
+        ConnectionManager.OnConnectionChanged += HandleConnectionChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Settings are the server's now. All that is left in the browser is a setup
+        // an older build saved there, which is adopted once and then cleared.
+        if (!SettingsProvider.HasSaved)
+        {
+            try
+            {
+                var legacy = await JS.InvokeAsync<string?>("WebSSMS.Ai.loadSettings");
+                if (SettingsProvider.TryImportLegacy(legacy))
+                {
+                    // Only let go of the browser copy once the server really has one.
+                    if (SettingsProvider.HasSaved) await JS.InvokeVoidAsync("WebSSMS.Ai.clearSettings");
+                    StateHasChanged();
+                }
+            }
+            catch (JSException)
+            {
+                // Storage unavailable; the appsettings defaults stand.
+            }
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("WebSSMS.Ai.initResizer", "ai-splitter", "ai-panel", 280, 900);
+        }
+        catch (JSException) { }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && (args.CtrlKey || args.MetaKey))
+        {
+            await Ask();
+        }
+    }
+
+    private void UseExample(string example) => Draft = example;
+
+    private async Task Ask()
+    {
+        var question = Draft.Trim();
+        if (question.Length == 0 || IsBusy) return;
+
+        Entries.Add(new AiChatEntry { Role = AiChatRole.User, Text = question });
+        Draft = string.Empty;
+
+        IsBusy = true;
+        Status = "Thinking...";
+        _cancellation = new CancellationTokenSource();
+        StateHasChanged();
+        await ScrollToBottom();
+
+        var context = new AiRequestContext
+        {
+            ServerName = ConnectionManager.ActiveConnection?.DataSource,
+            CurrentDatabase = ConnectionManager.GetCurrentDatabase(),
+            Databases = Databases,
+            CurrentScript = CurrentScriptProvider != null ? await CurrentScriptProvider() : null
+        };
+
+        var progress = new Progress<string>(message =>
+        {
+            Status = message;
+            _ = InvokeAsync(StateHasChanged);
+        });
+
+        AiTurnResult result;
+        try
+        {
+            result = await Agent.AskAsync(question, context, progress, _cancellation.Token);
+        }
+        finally
+        {
+            IsBusy = false;
+            _cancellation?.Dispose();
+            _cancellation = null;
+        }
+
+        var entry = new AiChatEntry
+        {
+            Role = AiChatRole.Assistant,
+            Text = result.Text,
+            Sql = result.Sql,
+            Request = question,
+            Steps = result.Steps,
+            IsError = result.IsError
+        };
+        Entries.Add(entry);
+
+        // A finished script goes straight into the tab -- that is what was asked
+        // for. Questions and errors stay in the panel.
+        if (entry.Sql != null) await Insert(entry);
+
+        StateHasChanged();
+        await ScrollToBottom();
+    }
+
+    private async Task Insert(AiChatEntry entry)
+    {
+        if (entry.Sql == null || ScriptInserter == null) return;
+
+        var script = AiScriptFormatter.Wrap(entry.Sql, entry.Request ?? string.Empty, SettingsProvider.Current);
+        entry.InsertedInto = await ScriptInserter(script);
+        StateHasChanged();
+    }
+
+    private async Task Copy(AiChatEntry entry)
+    {
+        if (entry.Sql == null) return;
+
+        var script = AiScriptFormatter.Wrap(entry.Sql, entry.Request ?? string.Empty, SettingsProvider.Current);
+        try
+        {
+            await JS.InvokeAsync<bool>("WebSSMS.Ai.copyToClipboard", script);
+        }
+        catch (JSException) { }
+    }
+
+    private void Cancel() => _cancellation?.Cancel();
+
+    private void StartOver()
+    {
+        Agent.Reset();
+        Entries.Clear();
+        Draft = string.Empty;
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("WebSSMS.Ai.scrollToBottom", "ai-messages");
+        }
+        catch (JSException) { }
+    }
+
+    private static string MessageClass(AiChatEntry entry) => entry.Role switch
+    {
+        AiChatRole.User => "ai-message-user",
+        _ when entry.IsError => "ai-message-assistant ai-message-error",
+        _ when entry.Sql == null => "ai-message-assistant ai-message-question",
+        _ => "ai-message-assistant"
+    };
+
+    /// <summary>An answer with no script is the model asking for something.</summary>
+    private static bool IsQuestion(AiChatEntry entry) =>
+        entry.Role == AiChatRole.Assistant && !entry.IsError && entry.Sql == null;
+
+    private void HandleSettingsChanged() => InvokeAsync(StateHasChanged);
+
+    private void HandleConnectionChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        SettingsProvider.Changed -= HandleSettingsChanged;
+        ConnectionManager.OnConnectionChanged -= HandleConnectionChanged;
+        _cancellation?.Cancel();
+        _cancellation?.Dispose();
+    }
+}

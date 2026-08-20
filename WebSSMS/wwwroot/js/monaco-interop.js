@@ -90,11 +90,48 @@ window.WebSSMS.Monaco = {
         }
     },
 
+    // Appends at the very end and parks the cursor there. Used by the AI panel,
+    // which adds to the open script rather than replacing it -- an edit rather
+    // than a setValue, so the user's undo history survives.
+    appendValue: function (elementId, text) {
+        const entry = this.editors[elementId];
+        if (!entry) return null;
+
+        const editor = entry.editor;
+        const model = editor.getModel();
+        const line = model.getLineCount();
+        const column = model.getLineMaxColumn(line);
+
+        editor.executeEdits('websms-ai', [{
+            range: new monaco.Range(line, column, line, column),
+            text: text,
+            forceMoveMarkers: true
+        }]);
+
+        const endLine = model.getLineCount();
+        editor.setPosition({ lineNumber: endLine, column: model.getLineMaxColumn(endLine) });
+        editor.revealLineInCenterIfOutsideViewport(endLine);
+        editor.focus();
+
+        return model.getValue();
+    },
+
     getSelectedText: function (elementId) {
         const entry = this.editors[elementId];
         if (!entry) return '';
         const selection = entry.editor.getSelection();
         return entry.editor.getModel().getValueInRange(selection);
+    },
+
+    // What SSMS executes on F5: the highlighted text when there is one,
+    // the whole script otherwise. Monaco keeps the selection after the editor
+    // is blurred, so this is still right when Execute is clicked on the toolbar.
+    getSelectedTextOrValue: function (elementId) {
+        const entry = this.editors[elementId];
+        if (!entry) return '';
+
+        const selected = entry.editor.getModel().getValueInRange(entry.editor.getSelection());
+        return selected.trim().length > 0 ? selected : entry.editor.getValue();
     },
 
     focus: function (elementId) {

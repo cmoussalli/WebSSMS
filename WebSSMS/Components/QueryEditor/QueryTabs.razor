@@ -114,6 +114,9 @@
 </div>
 
 @code {
+    /// <summary>How long a freshly opened tab needs before its editor can be scripted.</summary>
+    private const int EditorStartupDelayMs = 120;
+
     private List<QueryTab> Tabs = new();
     private string? ActiveTabId;
     private QueryTab? ActiveTab => Tabs.FirstOrDefault(t => t.Id == ActiveTabId);
@@ -149,6 +152,60 @@
         AddNewTab(script);
     }
 
+    /// <summary>What is in the active tab right now, or null when no tab is open.</summary>
+    public async Task<string?> GetActiveContentAsync()
+    {
+        if (ActiveTab == null) return null;
+
+        return CurrentEditor != null
+            ? await CurrentEditor.GetContentAsync()
+            : ActiveTab.Content;
+    }
+
+    /// <summary>
+    /// Appends a script to the end of the active tab -- opening one if there is
+    /// none -- and returns the title of the tab it landed in. Used by the AI
+    /// assistant, which adds to the open script rather than replacing it.
+    /// </summary>
+    public async Task<string> AppendToActiveTabAsync(string script)
+    {
+        if (ActiveTab == null)
+        {
+            AddNewTab();
+            StateHasChanged();
+
+            // The Monaco instance for the new tab only exists after a render.
+            await Task.Delay(EditorStartupDelayMs);
+        }
+
+        var tab = ActiveTab!;
+        var existing = CurrentEditor != null ? await CurrentEditor.GetContentAsync() : tab.Content;
+        var block = BlankLinesBefore(existing) + script;
+
+        tab.Content = CurrentEditor != null
+            ? await CurrentEditor.AppendContentAsync(block)
+            : existing + block;
+
+        tab.IsDirty = true;
+        StateHasChanged();
+
+        return tab.Title;
+    }
+
+    /// <summary>Keeps exactly one blank line between what was there and what is appended.</summary>
+    private static string BlankLinesBefore(string existing)
+    {
+        if (existing.Length == 0) return string.Empty;
+
+        var newlines = 0;
+        for (var i = existing.Length - 1; i >= 0 && (existing[i] == '\n' || existing[i] == '\r'); i--)
+        {
+            if (existing[i] == '\n') newlines++;
+        }
+
+        return newlines >= 2 ? string.Empty : new string('\n', 2 - newlines);
+    }
+
     private void SetActiveTab(string tabId)
     {
         ActiveTabId = tabId;
@@ -172,11 +229,18 @@
     {
         if (ActiveTab == null || !ConnectionManager.IsConnected) return;
 
-        var content = CurrentEditor != null
-            ? await CurrentEditor.GetContentAsync()
-            : ActiveTab.Content;
+        await ExecuteSql(await GetScriptToRunAsync());
+    }
 
-        await ExecuteSql(content);
+    /// <summary>
+    /// What Execute and Parse act on: the highlighted text when the user has
+    /// selected part of the script, the whole script otherwise -- as in SSMS.
+    /// </summary>
+    private async Task<string> GetScriptToRunAsync()
+    {
+        if (CurrentEditor == null) return ActiveTab?.Content ?? string.Empty;
+
+        return await CurrentEditor.GetSelectionOrContentAsync();
     }
 
     private async Task ExecuteSelection(string selectedText)
@@ -221,9 +285,7 @@
     {
         if (ActiveTab == null || !ConnectionManager.IsConnected) return;
 
-        var content = CurrentEditor != null
-            ? await CurrentEditor.GetContentAsync()
-            : ActiveTab.Content;
+        var content = await GetScriptToRunAsync();
 
         var parseSql = $"SET NOEXEC ON;\n{content}\nSET NOEXEC OFF;";
 

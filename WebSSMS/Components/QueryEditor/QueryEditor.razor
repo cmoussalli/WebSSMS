@@ -48,6 +48,27 @@
         }
     }
 
+    /// <summary>Appends to the end of the script and returns the whole thing.</summary>
+    public async Task<string> AppendContentAsync(string text)
+    {
+        if (_initialized)
+        {
+            try
+            {
+                var updated = await JS.InvokeAsync<string?>("WebSSMS.Monaco.appendValue", EditorId, text);
+                if (updated != null)
+                {
+                    Content = updated;
+                    return updated;
+                }
+            }
+            catch { }
+        }
+
+        Content += text;
+        return Content;
+    }
+
     public async Task<string> GetContentAsync()
     {
         if (_initialized)
@@ -55,6 +76,23 @@
             try
             {
                 return await JS.InvokeAsync<string>("WebSSMS.Monaco.getValue", EditorId);
+            }
+            catch { }
+        }
+        return Content;
+    }
+
+    /// <summary>
+    /// The text an Execute should run: the selection when the user has
+    /// highlighted something, the whole script otherwise -- same as SSMS.
+    /// </summary>
+    public async Task<string> GetSelectionOrContentAsync()
+    {
+        if (_initialized)
+        {
+            try
+            {
+                return await JS.InvokeAsync<string>("WebSSMS.Monaco.getSelectedTextOrValue", EditorId);
             }
             catch { }
         }

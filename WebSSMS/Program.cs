@@ -1,4 +1,4 @@
-using WebSSMS.Components;
+﻿using WebSSMS.Components;
 using WebSSMS.Endpoints;
 using WebSSMS.Models;
 using WebSSMS.Services;
@@ -18,6 +18,12 @@ namespace WebSSMS
             builder.Services.Configure<BackupStorageOptions>(
                 builder.Configuration.GetSection(BackupStorageOptions.SectionName));
 
+            builder.Services.Configure<AiSettings>(
+                builder.Configuration.GetSection(AiSettings.SectionName));
+
+            // The AI assistant reaches an external LLM endpoint over HTTP.
+            builder.Services.AddHttpClient();
+
             // Register WebSSMS services (scoped = per-circuit/per-tab)
             builder.Services.AddScoped<ConnectionManager>();
             builder.Services.AddScoped<QueryExecutionService>();
@@ -33,6 +39,17 @@ namespace WebSSMS
             builder.Services.AddScoped<MaintenanceService>();
             builder.Services.AddScoped<IntelliSenseService>();
             builder.Services.AddSingleton<TemplateService>();
+
+            // AI assistant: the saved settings, the LLM transport, the read-only
+            // lookups it is allowed, and the agent that drives them.
+            //
+            // Singleton: the settings are saved to a file on the server, so they
+            // survive a restart and are not one browser's private business.
+            builder.Services.AddSingleton<AiSettingsStore>();
+            builder.Services.AddScoped<AiSettingsProvider>();
+            builder.Services.AddScoped<LlmClient>();
+            builder.Services.AddScoped<SqlAiToolbox>();
+            builder.Services.AddScoped<SqlAiAgent>();
 
             // Singleton: a transfer ticket is minted inside a Blazor circuit but
             // redeemed by a plain HTTP request in a different DI scope.

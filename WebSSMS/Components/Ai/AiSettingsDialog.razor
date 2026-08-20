@@ -1,0 +1,224 @@
+﻿@using WebSSMS.Models
+@using WebSSMS.Services
+@inject AiSettingsProvider SettingsProvider
+@inject SqlAiAgent Agent
+
+@* Points the assistant at an LLM. Every provider here speaks the OpenAI
+   /chat/completions protocol, so the only real choices are the endpoint, the
+   model, and whether a key is needed. *@
+
+<Modal IsVisible="IsVisible" Title="AI Assistant Settings" Size="Modal.ModalSize.Medium" OnClose="Cancel">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Provider</label>
+            <select class="form-select" value="@Draft.Provider" @onchange="ChangeProvider">
+                @foreach (var provider in Enum.GetValues<AiProvider>())
+                {
+                    <option value="@provider">@AiSettings.DisplayName(provider)</option>
+                }
+            </select>
+            <span class="form-hint">
+                Ollama runs the model on your own machine. DeepSeek and OpenAI are hosted APIs and need a key.
+                Custom is anything else that speaks the OpenAI chat-completions protocol.
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Endpoint</label>
+            <input class="form-input" @bind="Draft.BaseUrl" @bind:event="oninput"
+                   placeholder="@AiSettings.DefaultBaseUrl(Draft.Provider)" />
+            <span class="form-hint">
+                Base URL of the API, ending at /v1. Leave empty for the provider default.
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Model</label>
+            <input class="form-input" @bind="Draft.Model" @bind:event="oninput"
+                   placeholder="@AiSettings.DefaultModel(Draft.Provider)" />
+            <span class="form-hint">
+                Pick one that can call tools — the assistant reads your schema before it writes.
+                Local models without tool support still work with <em>Look up schema with tools</em> switched off.
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">API key</label>
+            <input class="form-input" type="password" autocomplete="off" @bind="Draft.ApiKey" @bind:event="oninput"
+                   placeholder="@(AiSettings.RequiresApiKey(Draft.Provider) ? "Required" : "Not needed for a local endpoint")" />
+            <label class="form-checkbox" style="margin-top: 4px;">
+                <input type="checkbox" @bind="Draft.StoreApiKey" />
+                Store the API key with the settings
+            </label>
+            <span class="form-hint">
+                Saving writes these settings to <code>@SettingsProvider.FilePath</code> on the server, so they
+                are still here next time the app starts. Clear the checkbox to keep the key in memory until
+                the app restarts; everything else is saved either way.
+            </span>
+        </div>
+
+        <div class="ai-settings-section">How it looks things up</div>
+
+        <div class="form-group">
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="Draft.UseTools" />
+                Look up schema with tools (recommended)
+            </label>
+            <span class="form-hint">
+                On, the model calls read-only functions to list tables, read a table's structure and sample rows.
+                Off, it gets one summary of the current database's tables and columns instead — for local models
+                that cannot call functions.
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="Draft.AllowDataQueries" disabled="@(!Draft.UseTools)" />
+                Let it read rows, not just structure
+            </label>
+            <span class="form-hint">
+                Allows a single SELECT per lookup, so it can see what a status column actually contains.
+                Statements that write are rejected, and every query runs in a transaction that is rolled back.
+            </span>
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Rows per lookup</label>
+            <input class="form-input" type="number" min="1" max="200" style="width: 90px;" @bind="Draft.MaxRows" />
+
+            <label class="form-label" style="min-width: 100px;">Lookup limit</label>
+            <input class="form-input" type="number" min="0" max="40" style="width: 90px;" @bind="Draft.MaxToolCalls" />
+        </div>
+
+        <div class="ai-settings-section">Generation</div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Temperature</label>
+            <input class="form-input" type="number" step="0.1" min="-1" max="2" style="width: 90px;" @bind="Draft.Temperature" />
+
+            <label class="form-label" style="min-width: 100px;">Max tokens</label>
+            <input class="form-input" type="number" min="0" max="128000" style="width: 110px;" @bind="Draft.MaxTokens" />
+
+            <label class="form-label" style="min-width: 90px;">Timeout (s)</label>
+            <input class="form-input" type="number" min="5" max="600" style="width: 90px;" @bind="Draft.TimeoutSeconds" />
+        </div>
+        <span class="form-hint">
+            Low temperature keeps generated SQL predictable. Set either number to 0 (temperature: -1) to leave
+            it out of the request, which a few models require.
+        </span>
+
+        @if (TestMessage != null)
+        {
+            <div class="ai-test-result @(TestSucceeded ? "ai-test-ok" : "ai-test-fail")" style="margin-top: 12px;">
+                @TestMessage
+            </div>
+        }
+
+        @if (Error != null)
+        {
+            <div class="form-error" style="margin-top: 8px;">@Error</div>
+        }
+    </ChildContent>
+
+    <Footer>
+        <button class="btn" @onclick="Test" disabled="@IsTesting">
+            @(IsTesting ? "Testing..." : "Test connection")
+        </button>
+        <button class="btn" @onclick="ResetToServerDefault" title="Discard the saved settings and use appsettings.json">
+            Server default
+        </button>
+        <span style="flex: 1;"></span>
+        <button class="btn" @onclick="Cancel">Cancel</button>
+        <button class="btn btn-primary" @onclick="Save">Save</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private AiSettings Draft = new();
+    private string? Error;
+    private string? TestMessage;
+    private bool TestSucceeded;
+    private bool IsTesting;
+    private bool _wasVisible;
+
+    protected override void OnParametersSet()
+    {
+        // Reopen with a fresh copy of whatever is live, so Cancel really cancels.
+        if (IsVisible && !_wasVisible)
+        {
+            Draft = SettingsProvider.Current.Clone();
+            Error = null;
+            TestMessage = null;
+        }
+
+        _wasVisible = IsVisible;
+    }
+
+    private void ChangeProvider(ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<AiProvider>(args.Value?.ToString(), out var provider)) return;
+
+        // Carry over whatever the user typed themselves; swap the values that were
+        // only ever the previous provider's defaults.
+        if (string.IsNullOrWhiteSpace(Draft.BaseUrl) || Draft.BaseUrl == AiSettings.DefaultBaseUrl(Draft.Provider))
+            Draft.BaseUrl = AiSettings.DefaultBaseUrl(provider);
+
+        if (string.IsNullOrWhiteSpace(Draft.Model) || Draft.Model == AiSettings.DefaultModel(Draft.Provider))
+            Draft.Model = AiSettings.DefaultModel(provider);
+
+        Draft.Provider = provider;
+        TestMessage = null;
+        Error = null;
+    }
+
+    private async Task Test()
+    {
+        IsTesting = true;
+        TestMessage = null;
+        Error = null;
+        StateHasChanged();
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Clamp(Draft.TimeoutSeconds, 5, 600)));
+            (TestSucceeded, TestMessage) = await Agent.TestAsync(Draft, timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            TestSucceeded = false;
+            TestMessage = "The endpoint did not answer in time.";
+        }
+        finally
+        {
+            IsTesting = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        Error = Draft.Validate();
+        if (Error != null) return;
+
+        // The settings apply whatever happens; only the writing to disk can fail,
+        // and that is worth saying out loud rather than losing them again quietly.
+        Error = SettingsProvider.Save(Draft);
+        if (Error != null) return;
+
+        await OnSaved.InvokeAsync();
+        await OnClose.InvokeAsync();
+    }
+
+    private void ResetToServerDefault()
+    {
+        SettingsProvider.ResetToConfigured();
+        Draft = SettingsProvider.Current.Clone();
+        TestMessage = null;
+        Error = null;
+    }
+
+    private Task Cancel() => OnClose.InvokeAsync();
+}

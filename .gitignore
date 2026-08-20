@@ -435,3 +435,6 @@ FodyWeavers.xsd
 
 # Claude Code
 .claude/
+
+# WebSSMS AI assistant settings (may hold an API key)
+App_Data/
