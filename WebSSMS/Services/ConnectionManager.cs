@@ -6,6 +6,7 @@ namespace WebSSMS.Services;
 public class ConnectionManager : IDisposable
 {
     private readonly Dictionary<string, SqlConnection> _connections = new();
+    private readonly Dictionary<string, Models.ConnectionInfo> _connectionInfos = new();
     private string? _activeConnectionId;
 
     public event Action? OnConnectionChanged;
@@ -19,6 +20,15 @@ public class ConnectionManager : IDisposable
 
     public IReadOnlyDictionary<string, SqlConnection> Connections => _connections;
 
+    /// <summary>
+    /// The credentials behind the active connection. Kept because background work
+    /// (streaming a backup file out through SQL Server, for instance) needs its own
+    /// connection rather than sharing the circuit's -- SqlConnection is not
+    /// thread-safe, and a long transfer would block every other query in the tab.
+    /// </summary>
+    public Models.ConnectionInfo? ActiveConnectionInfo =>
+        _activeConnectionId != null && _connectionInfos.TryGetValue(_activeConnectionId, out var info) ? info : null;
+
     public async Task<(bool Success, string? Error)> ConnectAsync(Models.ConnectionInfo info)
     {
         try
@@ -27,6 +37,7 @@ public class ConnectionManager : IDisposable
             await connection.OpenAsync();
 
             _connections[info.Id] = connection;
+            _connectionInfos[info.Id] = info;
             _activeConnectionId = info.Id;
             OnConnectionChanged?.Invoke();
 
@@ -69,6 +80,7 @@ public class ConnectionManager : IDisposable
             catch { }
 
             _connections.Remove(connectionId);
+            _connectionInfos.Remove(connectionId);
 
             if (_activeConnectionId == connectionId)
             {
@@ -138,5 +150,6 @@ public class ConnectionManager : IDisposable
             try { conn.Dispose(); } catch { }
         }
         _connections.Clear();
+        _connectionInfos.Clear();
     }
 }

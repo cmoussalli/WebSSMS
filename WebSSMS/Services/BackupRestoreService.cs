@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using WebSSMS.Models;
 using System.Text;
+using static WebSSMS.Services.BackupFileService;
 
 namespace WebSSMS.Services;
 
@@ -27,7 +28,7 @@ public class BackupRestoreService
 
         var sb = new StringBuilder();
         sb.Append($"BACKUP {(options.Type == BackupType.TransactionLog ? "LOG" : "DATABASE")} [{options.DatabaseName}]");
-        sb.AppendLine($" TO DISK = N'{options.FilePath}'");
+        sb.AppendLine($" TO DISK = N'{QuoteLiteral(options.FilePath)}'");
 
         var withClauses = new List<string>();
         if (options.Type == BackupType.Differential) withClauses.Add("DIFFERENTIAL");
@@ -35,8 +36,8 @@ public class BackupRestoreService
         if (options.CompressBackup) withClauses.Add("COMPRESSION");
         if (options.Checksum) withClauses.Add("CHECKSUM");
         if (options.ContinueAfterError) withClauses.Add("CONTINUE_AFTER_ERROR");
-        if (!string.IsNullOrEmpty(options.BackupName)) withClauses.Add($"NAME = N'{options.BackupName}'");
-        if (!string.IsNullOrEmpty(options.Description)) withClauses.Add($"DESCRIPTION = N'{options.Description}'");
+        if (!string.IsNullOrEmpty(options.BackupName)) withClauses.Add($"NAME = N'{QuoteLiteral(options.BackupName)}'");
+        if (!string.IsNullOrEmpty(options.Description)) withClauses.Add($"DESCRIPTION = N'{QuoteLiteral(options.Description)}'");
         withClauses.Add("STATS = 10");
 
         if (withClauses.Count > 0)
@@ -82,16 +83,16 @@ public class BackupRestoreService
 
         var sb = new StringBuilder();
         sb.AppendLine($"RESTORE DATABASE [{options.DatabaseName}]");
-        sb.AppendLine($"FROM DISK = N'{options.FilePath}'");
+        sb.AppendLine($"FROM DISK = N'{QuoteLiteral(options.FilePath)}'");
 
         var withClauses = new List<string>();
         if (options.WithReplace) withClauses.Add("REPLACE");
         if (options.WithRecovery) withClauses.Add("RECOVERY");
         if (options.WithNoRecovery) withClauses.Add("NORECOVERY");
         if (!string.IsNullOrEmpty(options.RelocateDataFile))
-            withClauses.Add($"MOVE N'{options.BackupFiles.FirstOrDefault(f => f.Type == "D")?.LogicalName}' TO N'{options.RelocateDataFile}'");
+            withClauses.Add($"MOVE N'{QuoteLiteral(options.BackupFiles.FirstOrDefault(f => f.Type == "D")?.LogicalName ?? string.Empty)}' TO N'{QuoteLiteral(options.RelocateDataFile)}'");
         if (!string.IsNullOrEmpty(options.RelocateLogFile))
-            withClauses.Add($"MOVE N'{options.BackupFiles.FirstOrDefault(f => f.Type == "L")?.LogicalName}' TO N'{options.RelocateLogFile}'");
+            withClauses.Add($"MOVE N'{QuoteLiteral(options.BackupFiles.FirstOrDefault(f => f.Type == "L")?.LogicalName ?? string.Empty)}' TO N'{QuoteLiteral(options.RelocateLogFile)}'");
         withClauses.Add("STATS = 10");
 
         if (withClauses.Count > 0)
@@ -149,7 +150,7 @@ public class BackupRestoreService
         var files = new List<BackupFileInfo>();
         if (Connection == null) return files;
 
-        var sql = $"RESTORE FILELISTONLY FROM DISK = N'{filePath}'";
+        var sql = $"RESTORE FILELISTONLY FROM DISK = N'{QuoteLiteral(filePath)}'";
         using var cmd = Connection.CreateCommand();
         cmd.CommandText = sql;
 
@@ -171,13 +172,13 @@ public class BackupRestoreService
     {
         var sb = new StringBuilder();
         sb.Append($"BACKUP {(options.Type == BackupType.TransactionLog ? "LOG" : "DATABASE")} [{options.DatabaseName}]");
-        sb.AppendLine($" TO DISK = N'{options.FilePath}'");
+        sb.AppendLine($" TO DISK = N'{QuoteLiteral(options.FilePath)}'");
 
         var withClauses = new List<string>();
         if (options.Type == BackupType.Differential) withClauses.Add("DIFFERENTIAL");
         if (options.CopyOnly) withClauses.Add("COPY_ONLY");
         if (options.CompressBackup) withClauses.Add("COMPRESSION");
-        if (!string.IsNullOrEmpty(options.BackupName)) withClauses.Add($"NAME = N'{options.BackupName}'");
+        if (!string.IsNullOrEmpty(options.BackupName)) withClauses.Add($"NAME = N'{QuoteLiteral(options.BackupName)}'");
         withClauses.Add("STATS = 10");
 
         if (withClauses.Count > 0)

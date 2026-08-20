@@ -20,6 +20,7 @@
         <span class="menubar-item" @onclick='() => ShowPanel("security")'>Security</span>
         <span class="menubar-item" @onclick='() => ShowPanel("backup")'>Backup</span>
         <span class="menubar-item" @onclick='() => ShowPanel("restore")'>Restore</span>
+        <span class="menubar-item" @onclick='() => ShowPanel("backupfiles")'>Backup Files</span>
         <span class="menubar-item" @onclick='() => ShowPanel("import")'>Import</span>
         <span class="menubar-item" @onclick='() => ShowPanel("export")'>Export</span>
         <span class="menubar-item" @onclick='() => ShowPanel("diagram")'>Diagram</span>
@@ -241,8 +242,14 @@
               Databases="DatabaseList" />
 
 <!-- Restore Dialog -->
-<RestoreDialog IsVisible="ShowRestoreDialog"
+<RestoreDialog @ref="RestoreDialogRef"
+               IsVisible="ShowRestoreDialog"
                OnClose="() => ShowRestoreDialog = false" />
+
+<!-- Backup File Browser (download / upload) -->
+<BackupFilesDialog IsVisible="ShowBackupFilesDialog"
+                   OnClose="() => ShowBackupFilesDialog = false"
+                   OnRestoreRequested="RestoreFromFile" />
 
 <!-- Import Wizard -->
 <ImportWizard IsVisible="ShowImportWizard"
@@ -266,11 +273,13 @@
     private ObjectExplorer? ObjectExplorerRef;
     private QueryTabs? QueryTabsRef;
     private Toast? ToastRef;
+    private RestoreDialog? RestoreDialogRef;
 
     // UI State
     private bool ShowConnectionDialog;
     private bool ShowBackupDialog;
     private bool ShowRestoreDialog;
+    private bool ShowBackupFilesDialog;
     private bool ShowImportWizard;
     private bool ShowExportWizard;
     private bool ShowAboutDialog;
@@ -407,6 +416,15 @@
         StateHasChanged();
     }
 
+    // Picked a file in the browser -- carry it straight into the restore dialog.
+    private void RestoreFromFile(string path)
+    {
+        ShowBackupFilesDialog = false;
+        ShowRestoreDialog = true;
+        RestoreDialogRef?.SetSourceFile(path);
+        StateHasChanged();
+    }
+
     private void ShowPanel(string panel)
     {
         switch (panel)
@@ -416,6 +434,9 @@
                 break;
             case "restore":
                 ShowRestoreDialog = true;
+                break;
+            case "backupfiles":
+                ShowBackupFilesDialog = true;
                 break;
             case "import":
                 ShowImportWizard = true;

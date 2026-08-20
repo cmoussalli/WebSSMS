@@ -1,0 +1,189 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@using System.Text.Json
+@implements IDisposable
+@inject BackupFileService BackupFiles
+@inject IJSRuntime JS
+
+@* Uploads a .bak from the browser into a folder SQL Server can restore from.
+   The file bytes go straight over HTTP -- see wwwroot/js/file-transfer.js. *@
+
+<div class="backup-upload-panel">
+    <div class="form-group form-group-horizontal">
+        <label class="form-label">Upload to folder:</label>
+        <input class="form-input" @bind="Directory" @bind:after="NotifyDirectoryChanged"
+               placeholder="C:\Backups" disabled="@IsUploading" />
+    </div>
+
+    <div class="form-group form-group-horizontal">
+        <label class="form-label">Backup file:</label>
+        <input type="file" id="@InputId" class="form-input" accept="@AcceptFilter"
+               disabled="@IsUploading" @onchange="HandleFileSelected" />
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;">
+        <label class="form-checkbox">
+            <input type="checkbox" @bind="Overwrite" disabled="@IsUploading" />
+            Overwrite if the file already exists
+        </label>
+
+        @if (IsUploading)
+        {
+            <button class="btn btn-sm" @onclick="CancelUpload">Cancel</button>
+        }
+        else
+        {
+            <button class="btn btn-sm btn-primary" @onclick="StartUpload" disabled="@(SelectedFileName == null)">
+                Upload
+            </button>
+        }
+    </div>
+
+    @if (SelectedFileName != null && !IsUploading && StatusMessage == null)
+    {
+        <div style="margin-top: 6px; font-size: var(--font-size-xs); color: var(--text-secondary);">
+            @SelectedFileName (@BackupFileEntry.FormatSize(SelectedFileSize))
+        </div>
+    }
+
+    @if (IsUploading)
+    {
+        <div style="margin-top: 8px;">
+            <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                <div style="height: 100%; width: @(ProgressPercent)%; background: var(--text-accent); transition: width 0.15s linear;"></div>
+            </div>
+            <div style="margin-top: 4px; font-size: var(--font-size-xs); color: var(--text-secondary);">
+                Uploading @SelectedFileName -- @ProgressPercent%
+                (@BackupFileEntry.FormatSize(BytesSent) of @BackupFileEntry.FormatSize(SelectedFileSize))
+            </div>
+        </div>
+    }
+
+    @if (StatusMessage != null)
+    {
+        <div style="margin-top: 8px; padding: 8px; border-radius: 4px; font-size: var(--font-size-sm);
+                    background: @(HasError ? "rgba(190,17,0,0.1)" : "rgba(45,139,45,0.1)");
+                    color: @(HasError ? "var(--text-error)" : "var(--text-success)");">
+            @StatusMessage
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Folder the file lands in. Two-way bound so callers can keep it in sync.</summary>
+    [Parameter] public string Directory { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> DirectoryChanged { get; set; }
+
+    /// <summary>Fires with the full server-side path once the file is in place.</summary>
+    [Parameter] public EventCallback<string> OnUploaded { get; set; }
+
+    private string InputId { get; } = $"backup-upload-{Guid.NewGuid():N}";
+    private string AcceptFilter => string.Join(",", BackupFiles.AllowedExtensions);
+
+    private DotNetObjectReference<BackupUploadPanel>? _selfRef;
+    private string? SelectedFileName;
+    private long SelectedFileSize;
+    private bool Overwrite;
+    private bool IsUploading;
+    private int ProgressPercent;
+    private long BytesSent;
+    private string? StatusMessage;
+    private bool HasError;
+
+    private Task NotifyDirectoryChanged() => DirectoryChanged.InvokeAsync(Directory);
+
+    private async Task HandleFileSelected()
+    {
+        StatusMessage = null;
+        ProgressPercent = 0;
+        BytesSent = 0;
+
+        var selection = await JS.InvokeAsync<FileSelection?>("WebSSMS.FileTransfer.getSelectedFile", InputId);
+        SelectedFileName = selection?.Name;
+        SelectedFileSize = selection?.Size ?? 0;
+    }
+
+    private async Task StartUpload()
+    {
+        if (SelectedFileName == null) return;
+
+        StatusMessage = null;
+        HasError = false;
+
+        // Validate and reserve the destination before any bytes move, so a bad
+        // folder or a name clash fails in a dialog rather than halfway through a
+        // multi-gigabyte transfer.
+        var (ticket, error) = BackupFiles.CreateUploadTicket(Directory, SelectedFileName, Overwrite);
+        if (ticket == null)
+        {
+            StatusMessage = error;
+            HasError = true;
+            return;
+        }
+
+        IsUploading = true;
+        ProgressPercent = 0;
+        BytesSent = 0;
+        StateHasChanged();
+
+        _selfRef ??= DotNetObjectReference.Create(this);
+
+        try
+        {
+            var response = await JS.InvokeAsync<string>(
+                "WebSSMS.FileTransfer.upload",
+                InputId,
+                $"/api/backup/upload/{ticket.Id}",
+                _selfRef);
+
+            var result = JsonSerializer.Deserialize<UploadResult>(
+                response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            StatusMessage = $"Uploaded {result?.FileName} ({result?.Size}) to {result?.Path}";
+            HasError = false;
+
+            await JS.InvokeVoidAsync("WebSSMS.FileTransfer.clearInput", InputId);
+            SelectedFileName = null;
+
+            if (result?.Path != null)
+                await OnUploaded.InvokeAsync(result.Path);
+        }
+        catch (JSException ex)
+        {
+            StatusMessage = ex.Message;
+            HasError = true;
+        }
+        finally
+        {
+            IsUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CancelUpload()
+    {
+        await JS.InvokeVoidAsync("WebSSMS.FileTransfer.cancelUpload", InputId);
+    }
+
+    [JSInvokable]
+    public Task OnUploadProgress(int percent, long loaded, long total)
+    {
+        ProgressPercent = percent;
+        BytesSent = loaded;
+        if (total > 0) SelectedFileSize = total;
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => _selfRef?.Dispose();
+
+    private sealed record FileSelection(string Name, long Size);
+
+    private sealed class UploadResult
+    {
+        public string? Path { get; set; }
+        public string? FileName { get; set; }
+        public long Bytes { get; set; }
+        public string? Size { get; set; }
+    }
+}

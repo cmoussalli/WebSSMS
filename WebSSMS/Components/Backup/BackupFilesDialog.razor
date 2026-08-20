@@ -1,0 +1,179 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject BackupFileService BackupFiles
+@inject IJSRuntime JS
+
+@* Browse the backup folder on the server, pull a .bak down to the browser, or
+   push one back up ready to restore. *@
+
+<Modal IsVisible="IsVisible" Title="Backup Files" OnClose="Close" Size="Modal.ModalSize.ExtraLarge">
+    <ChildContent>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Folder:</label>
+            <input class="form-input" @bind="Directory" @bind:event="oninput"
+                   placeholder="C:\Backups" @onkeydown="HandleKeyDown" />
+            <button class="btn btn-sm" style="margin-left: 6px;" @onclick="Refresh" disabled="@IsLoading">
+                @(IsLoading ? "Loading..." : "Refresh")
+            </button>
+        </div>
+
+        @if (Listing?.Error != null)
+        {
+            <div style="margin-top: 8px; padding: 8px; border-radius: 4px; font-size: var(--font-size-sm);
+                        background: rgba(190,17,0,0.1); color: var(--text-error);">
+                @Listing.Error
+            </div>
+        }
+        else if (Listing != null)
+        {
+            <div style="margin-top: 4px; font-size: var(--font-size-xs); color: var(--text-secondary);">
+                @Listing.Files.Count file(s) &middot;
+                read via @(Listing.Mode == BackupTransferMode.FileSystem ? "the web app's file system" : "SQL Server")
+                @if (Listing.Note != null)
+                {
+                    <span> &middot; @Listing.Note</span>
+                }
+            </div>
+
+            <div class="data-grid-wrapper" style="margin-top: 8px; max-height: 320px; overflow: auto;">
+                <table class="data-grid" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th style="width: 100px;">Size</th>
+                            <th style="width: 160px;">Modified (UTC)</th>
+                            <th style="width: 190px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Listing.Files.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="4" style="color: var(--text-secondary);">
+                                    No backup files in this folder.
+                                </td>
+                            </tr>
+                        }
+                        @foreach (var file in Listing.Files)
+                        {
+                            <tr>
+                                <td title="@file.FullPath">@file.Name</td>
+                                <td>@file.SizeDisplay</td>
+                                <td>@(file.ModifiedUtc?.ToString("yyyy-MM-dd HH:mm") ?? "--")</td>
+                                <td>
+                                    <button class="btn btn-sm" @onclick="() => Download(file)">Download</button>
+                                    <button class="btn btn-sm" @onclick="() => Restore(file)">Restore</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (TransferMessage != null)
+        {
+            <div style="margin-top: 8px; padding: 8px; border-radius: 4px; font-size: var(--font-size-sm);
+                        background: @(TransferFailed ? "rgba(190,17,0,0.1)" : "rgba(45,139,45,0.1)");
+                        color: @(TransferFailed ? "var(--text-error)" : "var(--text-success)");">
+                @TransferMessage
+            </div>
+        }
+
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-primary);">
+            <div style="font-size: var(--font-size-sm); font-weight: 600; margin-bottom: 8px;">
+                Upload a backup file
+            </div>
+            <BackupUploadPanel @bind-Directory="Directory" OnUploaded="HandleUploaded" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn" @onclick="Close">Close</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Hands a file path to the restore dialog.</summary>
+    [Parameter] public EventCallback<string> OnRestoreRequested { get; set; }
+
+    private string Directory = string.Empty;
+    private BackupDirectoryListing? Listing;
+    private bool IsLoading;
+    private string? TransferMessage;
+    private bool TransferFailed;
+    private bool _initialised;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Fill in the instance's default backup folder the first time the dialog
+        // opens, so the common case needs no typing at all.
+        if (!IsVisible || _initialised) return;
+
+        _initialised = true;
+
+        if (string.IsNullOrWhiteSpace(Directory))
+            Directory = await BackupFiles.GetDefaultBackupDirectoryAsync() ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(Directory))
+            await Refresh();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        if (string.IsNullOrWhiteSpace(Directory)) return;
+
+        IsLoading = true;
+        TransferMessage = null;
+        StateHasChanged();
+
+        Listing = await BackupFiles.ListDirectoryAsync(Directory);
+
+        IsLoading = false;
+    }
+
+    private async Task Download(BackupFileEntry file)
+    {
+        TransferMessage = null;
+
+        var (ticket, error) = await BackupFiles.CreateDownloadTicketAsync(file.FullPath);
+        if (ticket == null)
+        {
+            TransferMessage = error;
+            TransferFailed = true;
+            return;
+        }
+
+        await JS.InvokeVoidAsync(
+            "WebSSMS.FileTransfer.download", $"/api/backup/download/{ticket.Id}", ticket.FileName);
+
+        TransferFailed = false;
+        TransferMessage = ticket.Mode == BackupTransferMode.SqlServer
+            ? $"Downloading {ticket.FileName} through SQL Server. Large files take a while to start -- SQL Server reads the whole file first."
+            : $"Downloading {ticket.FileName}.";
+    }
+
+    private async Task Restore(BackupFileEntry file)
+    {
+        await OnRestoreRequested.InvokeAsync(file.FullPath);
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandleUploaded(string path)
+    {
+        await Refresh();
+    }
+
+    private async Task Close()
+    {
+        TransferMessage = null;
+        await OnClose.InvokeAsync();
+    }
+}

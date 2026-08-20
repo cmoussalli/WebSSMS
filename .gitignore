@@ -291,6 +291,11 @@ UpgradeLog*.htm
 ServiceFabricBackup/
 *.rptproj.bak
 
+# "Backup*/" above is aimed at Visual Studio upgrade output, but it also matches
+# the app's own Components/Backup folder -- which left the backup and restore
+# dialogs untracked, so a fresh clone would not build. Keep that folder.
+!WebSSMS/Components/Backup/
+
 # SQL Server files
 *.mdf
 *.ldf

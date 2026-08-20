@@ -1,0 +1,175 @@
+@using WebSSMS.Models
+@using WebSSMS.Services
+@inject BackupRestoreService BackupService
+@inject BackupFileService BackupFiles
+
+<Modal IsVisible="IsVisible" Title="Restore Database" OnClose="Close" Size="Modal.ModalSize.Large">
+    <ChildContent>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Database:</label>
+            <input class="form-input" @bind="Options.DatabaseName" placeholder="Target database name" />
+        </div>
+
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Source file:</label>
+            <input class="form-input" @bind="Options.FilePath" placeholder="C:\Backups\database.bak" />
+        </div>
+
+        <div style="margin-top: 8px; display: flex; gap: 6px;">
+            <button class="btn btn-sm" @onclick="ReadBackupInfo">Read Backup Info</button>
+            <button class="btn btn-sm" @onclick="ToggleUpload">
+                @(ShowUpload ? "Hide upload" : "Upload backup file...")
+            </button>
+        </div>
+
+        @* Restoring a .bak that only exists on the user's machine means getting it
+           onto a path SQL Server can open first. *@
+        @if (ShowUpload)
+        {
+            <div style="margin-top: 10px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px;">
+                <BackupUploadPanel @bind-Directory="UploadDirectory" OnUploaded="HandleUploaded" />
+            </div>
+        }
+
+        @if (Options.BackupFiles.Count > 0)
+        {
+            <div style="margin-top: 12px;">
+                <div style="font-size: var(--font-size-sm); font-weight: 600; margin-bottom: 4px;">Backup Contents:</div>
+                <table class="data-grid" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Logical Name</th>
+                            <th>Type</th>
+                            <th>Physical Name</th>
+                            <th>Size</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var file in Options.BackupFiles)
+                        {
+                            <tr>
+                                <td>@file.LogicalName</td>
+                                <td>@(file.Type == "D" ? "Data" : "Log")</td>
+                                <td>@file.PhysicalName</td>
+                                <td>@((file.Size / 1024.0 / 1024.0).ToString("F1")) MB</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div style="margin-top: 12px;">
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="Options.WithReplace" />
+                Overwrite existing database (WITH REPLACE)
+            </label>
+            <label class="form-checkbox">
+                <input type="checkbox" @bind="Options.WithRecovery" />
+                Restore with recovery (database available after restore)
+            </label>
+        </div>
+
+        <div class="form-group form-group-horizontal" style="margin-top: 8px;">
+            <label class="form-label">Relocate data file:</label>
+            <input class="form-input" @bind="Options.RelocateDataFile" placeholder="Optional new data file path" />
+        </div>
+        <div class="form-group form-group-horizontal">
+            <label class="form-label">Relocate log file:</label>
+            <input class="form-input" @bind="Options.RelocateLogFile" placeholder="Optional new log file path" />
+        </div>
+
+        @if (ResultMessage != null)
+        {
+            <div style="margin-top: 12px; padding: 8px; border-radius: 4px; font-size: var(--font-size-sm);
+                        background: @(HasError ? "rgba(190,17,0,0.1)" : "rgba(45,139,45,0.1)");
+                        color: @(HasError ? "var(--text-error)" : "var(--text-success)");">
+                @ResultMessage
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-primary" @onclick="RunRestore" disabled="@IsRunning">
+            @(IsRunning ? "Restoring..." : "OK")
+        </button>
+        <button class="btn" @onclick="Close">Cancel</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private WebSSMS.Models.RestoreOptions Options = new() { WithRecovery = true };
+    private bool IsRunning;
+    private string? ResultMessage;
+    private bool HasError;
+    private bool ShowUpload;
+    private string UploadDirectory = string.Empty;
+
+    private async Task ToggleUpload()
+    {
+        ShowUpload = !ShowUpload;
+
+        if (ShowUpload && string.IsNullOrWhiteSpace(UploadDirectory))
+        {
+            UploadDirectory = ServerPath.GetDirectoryName(Options.FilePath ?? string.Empty) is { Length: > 0 } dir
+                ? dir
+                : await BackupFiles.GetDefaultBackupDirectoryAsync() ?? string.Empty;
+        }
+    }
+
+    // Point the restore straight at what was just uploaded and read its contents,
+    // so the user goes from "file on my laptop" to "ready to restore" in one step.
+    private async Task HandleUploaded(string path)
+    {
+        Options.FilePath = path;
+        ShowUpload = false;
+        await ReadBackupInfo();
+    }
+
+    private async Task ReadBackupInfo()
+    {
+        if (string.IsNullOrEmpty(Options.FilePath)) return;
+
+        try
+        {
+            Options.BackupFiles = await BackupService.GetBackupFileListAsync(Options.FilePath);
+            ResultMessage = null;
+        }
+        catch (Exception ex)
+        {
+            ResultMessage = ex.Message;
+            HasError = true;
+        }
+    }
+
+    private async Task RunRestore()
+    {
+        IsRunning = true;
+        ResultMessage = null;
+        StateHasChanged();
+
+        var result = await BackupService.RestoreDatabaseAsync(Options);
+        IsRunning = false;
+        HasError = result.HasErrors;
+        ResultMessage = result.Messages.LastOrDefault()?.Text;
+    }
+
+    /// <summary>Pre-fills the source file, used when a file is picked in the Backup Files browser.</summary>
+    public void SetSourceFile(string path)
+    {
+        Options.FilePath = path;
+        Options.BackupFiles.Clear();
+        ResultMessage = null;
+        HasError = false;
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        ResultMessage = null;
+        ShowUpload = false;
+        await OnClose.InvokeAsync();
+    }
+}
